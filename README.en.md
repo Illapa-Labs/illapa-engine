@@ -38,7 +38,7 @@ The API of [Illapa Labs](https://github.com/Illapa-Labs). It asks SENAMHI (Peru'
 
 Example: `GET /v1/distritos?departamento=lima&solo_avisos=true`.
 
-Field names are in Spanish, like the data they describe. Lists include `actualizado` (when the data was downloaded), `fecha_quebradas` (the date of the ravine warning) and `fuente`. Responses are compressed and can be cached for 5 minutes.
+Field names are in Spanish, like the data they describe. Lists include `actualizado` (when the data was downloaded), `fecha_quebradas` (the date of the ravine warning) and `fuente`. Responses are compressed; how long they can be kept is in [Cache and CDN](#cache-and-cdn). Until the first refresh, the lists answer `503`: not knowing yet is not the same as having no warnings.
 
 ## How it works
 
@@ -51,6 +51,29 @@ Every 30 minutes, in the background:
 Every 6 hours it asks Open-Meteo for the rain forecast at about 1,450 points over Peru, in batches with pauses to respect its limits (it takes about 3 minutes).
 
 On start it serves the last saved warning and forecast, so there is no need to wait for the first refresh.
+
+## Cache and CDN
+
+The data does not change with every visit: the warning every half hour and the forecast every 6 hours. So the API builds the lists in memory after each refresh (no request queries the database or SENAMHI) and tells browsers and CDNs how long they may keep each response:
+
+| Data | Browser (`Cache-Control`) | CDN (`CDN-Cache-Control`) |
+|---|---|---|
+| Warning, departments, provinces, districts | 5 min, then 25 more min serving the previous copy while fetching the new one | 10 min, then 20 more min serving the previous one |
+| Forecast | 30 min, then 1 more hour serving the previous one | same |
+| Errors (`503`) and `/healthz` | not kept (`no-store`) | not kept |
+
+Every data response also allows serving the last copy for up to a day if the API fails (`stale-if-error`): a warning from a while ago is better than an empty page. There is no `s-maxage`, because it stops a CDN from serving the previous copy while it fetches the new one.
+
+### Cloudflare rule (when deploying)
+
+With the API behind Cloudflare, thousands of visits turn into a few requests to the API every 10 minutes. But **Cloudflare does not cache JSON responses by default**: a rule is needed.
+
+1. The DNS record for `api.illapalabs.org` must be **proxied** (orange cloud).
+2. In *Caching → Cache Rules*, create a rule for `api.illapalabs.org` whose path starts with `/v1/`, set to **Eligible for cache** and respecting the origin headers (*Edge TTL* and *Browser TTL*: use the origin's `Cache-Control`).
+3. Do not turn on *Always Online* for this path: with it, Cloudflare ignores `stale-while-revalidate` and `stale-if-error`.
+4. Check: `curl -sI https://api.illapalabs.org/v1/aviso | grep -i cf-cache-status` should say `HIT` from the second request on (`MISS` the first time, `UPDATING` while it renews).
+
+The option names in the Cloudflare dashboard change over time: if they do not match, see [Cache Rules](https://developers.cloudflare.com/cache/how-to/cache-rules/settings/) and [Origin Cache Control](https://developers.cloudflare.com/cache/concepts/cache-control/).
 
 ## Running locally
 
