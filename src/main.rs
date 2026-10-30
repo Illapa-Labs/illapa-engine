@@ -19,6 +19,7 @@ mod geometry;
 mod refresh;
 mod routes;
 mod senamhi;
+mod snapshot;
 
 const USER_AGENT: &str = concat!(
     "illapa-engine/",
@@ -34,6 +35,18 @@ pub struct AppState {
     aviso: Arc<RwLock<Option<Value>>>,
     /// The last rain forecast; `None` until the first one, or a saved one, is available
     pronostico: Arc<RwLock<Option<Value>>>,
+    /// The department, province and district lists, rebuilt after every refresh
+    snapshot: Arc<RwLock<Arc<snapshot::Snapshot>>>,
+}
+
+impl AppState {
+    /// Rebuilds the lists from the database. If it fails, the previous lists stay.
+    async fn reload_snapshot(&self) {
+        match snapshot::Snapshot::load(&self.pool).await {
+            Ok(snapshot) => *self.snapshot.write().await = Arc::new(snapshot),
+            Err(error) => tracing::warn!("could not rebuild the lists, the previous ones stay: {error:#}"),
+        }
+    }
 }
 
 #[tokio::main]
@@ -75,7 +88,9 @@ async fn main() -> Result<()> {
         senamhi: senamhi::Senamhi::new(http.clone(), config.senamhi_wfs_url.clone()),
         aviso: Arc::new(RwLock::new(saved.map(|json| json.0))),
         pronostico: Arc::new(RwLock::new(saved_forecast.map(|json| json.0))),
+        snapshot: Arc::new(RwLock::new(Arc::new(snapshot::Snapshot::default()))),
     };
+    state.reload_snapshot().await;
 
     if config.refresh_enabled {
         let background = state.clone();
@@ -84,6 +99,7 @@ async fn main() -> Result<()> {
             loop {
                 match refresh::run(&background).await {
                     Ok(outcome) => {
+                        background.reload_snapshot().await;
                         tracing::info!(
                             districts = outcome.districts,
                             unmatched = outcome.unmatched.len(),
@@ -130,10 +146,10 @@ async fn main() -> Result<()> {
         .route("/v1/provincias", get(routes::provincias))
         .route("/v1/distritos", get(routes::distritos))
         .route("/v1/pronostico", get(routes::pronostico))
-        // The data changes at most every refresh: browsers and CDNs can keep it for 5 minutes.
+        // Each data route sets how long it can be kept (routes.rs); anything else is not cached.
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CACHE_CONTROL,
-            HeaderValue::from_static("public, max-age=300"),
+            HeaderValue::from_static("no-store"),
         ))
         .layer(CompressionLayer::new())
         .layer(CorsLayer::permissive())
