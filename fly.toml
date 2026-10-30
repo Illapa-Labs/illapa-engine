@@ -2,7 +2,9 @@
 # Ver docs/DEPLOY.md.
 
 app = "illapa-engine"
-primary_region = "gru"
+# Junto a la base de Supabase (us-east-1, Virginia): cada refresco escribe cientos de filas, y lejos de la base
+# cada una tardaría unos 120 ms. Los usuarios en el Perú no lo notan, porque los atiende el CDN.
+primary_region = "iad"
 
 [build]
   dockerfile = "Dockerfile"

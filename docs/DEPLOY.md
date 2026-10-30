@@ -20,7 +20,7 @@ fly apps create illapa-engine --org <tu-organización>
 
 ## 2. La base en Supabase
 
-1. Crea un proyecto para producción, en la región más cercana a la de Fly (`primary_region` en `fly.toml`).
+1. Crea un proyecto para producción en la misma región que la app de Fly (`primary_region` en `fly.toml`): cada refresco escribe cientos de filas, y lejos de la base tarda mucho más. Hoy: Supabase `us-east-1` y Fly `iad`, ambos en Virginia.
 2. En *Connect*, copia la cadena de conexión del *Session pooler* (puerto 5432). Evita el modo *Transaction* (puerto 6543): no admite las sentencias preparadas que usa la API.
 3. Ponla como secreto. Este paso lo hace la persona que tiene la contraseña, en su terminal:
 
