@@ -1,0 +1,33 @@
+# Despliegue en Fly.io (producción). Los secretos, como DATABASE_URL, no van aquí: se ponen con `fly secrets set`.
+# Ver docs/DEPLOY.md.
+
+app = "illapa-engine"
+primary_region = "gru"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ILLAPA_ENV = "production"
+  ILLAPA_ADDR = "0.0.0.0:8080"
+  RUST_LOG = "info,tower_http=warn"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # La API refresca los datos en segundo plano cada media hora: tiene que seguir encendida aunque nadie la visite.
+  # Las visitas las absorbe el CDN, así que basta una máquina.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/healthz"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
