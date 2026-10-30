@@ -87,7 +87,15 @@ The API is public and read-only: nothing can be stolen or changed, but someone c
    KEY=$(openssl rand -hex 32) && fly secrets set ORIGIN_SECRET="$KEY" --app illapa-engine --stage && printf '%s' "$KEY" | pbcopy; unset KEY
    ```
 
-   In *Rules → Transform Rules → Modify Request Header*, create a rule for *Hostname* equal to `api.illapalabs.org` that **sets** (*Set static*) the header `x-illapa-origin` to the copied key. Deploy the rule **before** `fly deploy`: if the API required the header before Cloudflare sent it, it would refuse everything.
+   In *Rules → Transform Rules → Modify Request Header*, create a rule for *Hostname* equal to `api.illapalabs.org` that **sets** (*Set static*) the header `x-illapa-origin` to the copied key. The condition must be *Hostname*: *URI Full* includes `https://` and the path, and never equals the bare domain.
+
+   To try it **without risking the site**, deploy first in report-only mode, which lets everything through and writes to `fly logs` whether the header is missing or wrong (only its length, never the value):
+
+   ```bash
+   fly deploy --env ORIGIN_CHECK=report
+   ```
+
+   Once requests through Cloudflare leave no warnings (`would refuse`), deploy without that variable to turn blocking on.
 2. **The cache key.** In the API's cache rule, under *Cache key → Query string*, choose *Include only* with `departamento`, `provincia`, `nivel_minimo`, `solo_avisos` and `limite`. Any other parameter is ignored and the response comes from the cache.
 3. **Per-visitor limit.** In *Security → WAF → Rate limiting rules*, create a rule for `api.illapalabs.org` that counts by IP and blocks for a few seconds anyone above, for example, 60 requests in 10 seconds. The limits each plan allows are in [Cloudflare's documentation](https://developers.cloudflare.com/waf/rate-limiting-rules/).
 

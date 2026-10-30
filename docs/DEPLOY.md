@@ -87,7 +87,15 @@ La API es pública y de solo lectura: no se puede robar ni cambiar nada, pero s�
    KEY=$(openssl rand -hex 32) && fly secrets set ORIGIN_SECRET="$KEY" --app illapa-engine --stage && printf '%s' "$KEY" | pbcopy; unset KEY
    ```
 
-   En *Rules → Transform Rules → Modify Request Header*, crea una regla para *Hostname* igual a `api.illapalabs.org` que **ponga** (*Set static*) la cabecera `x-illapa-origin` con la clave copiada. Despliega la regla **antes** de `fly deploy`: si la API empieza a exigir la cabecera antes de que Cloudflare la mande, rechazaría todo.
+   En *Rules → Transform Rules → Modify Request Header*, crea una regla para *Hostname* igual a `api.illapalabs.org` que **ponga** (*Set static*) la cabecera `x-illapa-origin` con la clave copiada. La condición tiene que ser *Hostname*: *URI Full* incluye `https://` y la ruta, y nunca es igual a solo el dominio.
+
+   Para probarla **sin arriesgar la web**, despliega primero en modo de solo registro, que deja pasar todo y anota en `fly logs` si la cabecera falta o no coincide (solo su largo, nunca el valor):
+
+   ```bash
+   fly deploy --env ORIGIN_CHECK=report
+   ```
+
+   Cuando las peticiones por Cloudflare ya no dejen advertencias (`would refuse`), despliega sin esa variable para activar el bloqueo.
 2. **La clave de caché.** En la regla de caché de la API, en *Cache key → Query string*, elige *Include only* con `departamento`, `provincia`, `nivel_minimo`, `solo_avisos` y `limite`. Cualquier otro parámetro se ignora y la respuesta sale de la caché.
 3. **Límite por visitante.** En *Security → WAF → Rate limiting rules*, crea una regla para `api.illapalabs.org` que cuente por IP y bloquee unos segundos a quien pase de, por ejemplo, 60 peticiones en 10 segundos. Los límites que admite cada plan están en la [documentación de Cloudflare](https://developers.cloudflare.com/waf/rate-limiting-rules/).
 

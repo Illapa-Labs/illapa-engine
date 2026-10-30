@@ -155,10 +155,14 @@ async fn main() -> Result<()> {
     let mut data = filtered.merge(fixed);
     match &config.origin_secret {
         Some(secret) => {
-            data = data.route_layer(middleware::from_fn_with_state(
-                Arc::<str>::from(secret.as_str()),
-                protection::require_origin_secret,
-            ));
+            if !config.origin_enforce {
+                tracing::warn!("ORIGIN_CHECK=report: requests without the Cloudflare header are logged, not refused");
+            }
+            let check = protection::OriginCheck {
+                secret: Arc::from(secret.as_str()),
+                enforce: config.origin_enforce,
+            };
+            data = data.route_layer(middleware::from_fn_with_state(check, protection::require_origin_secret));
         }
         None => tracing::warn!("ORIGIN_SECRET is not set: the data routes answer requests from anywhere, not only Cloudflare"),
     }

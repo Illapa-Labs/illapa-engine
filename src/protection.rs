@@ -38,15 +38,35 @@ fn same_secret(given: &[u8], expected: &[u8]) -> bool {
     given.len() == expected.len() && given.iter().zip(expected).fold(0u8, |difference, (a, b)| difference | (a ^ b)) == 0
 }
 
-pub async fn require_origin_secret(State(secret): State<Arc<str>>, request: Request, next: Next) -> Response {
-    let allowed = request
-        .headers()
-        .get(ORIGIN_HEADER)
-        .is_some_and(|given| same_secret(given.as_bytes(), secret.as_bytes()));
-    if allowed {
-        next.run(request).await
-    } else {
+/// How the origin secret is checked.
+#[derive(Clone)]
+pub struct OriginCheck {
+    pub secret: Arc<str>,
+    /// `false`: only log what would be refused, without refusing (`ORIGIN_CHECK=report`), to try a new Cloudflare
+    /// rule without taking the site down
+    pub enforce: bool,
+}
+
+pub async fn require_origin_secret(State(check): State<OriginCheck>, request: Request, next: Next) -> Response {
+    let given = request.headers().get(ORIGIN_HEADER).map(|value| value.as_bytes().to_vec());
+    if given.as_deref().is_some_and(|given| same_secret(given, check.secret.as_bytes())) {
+        return next.run(request).await;
+    }
+    // Only the length is logged, never the value
+    let reason = match &given {
+        None => "header missing".to_string(),
+        Some(given) => format!(
+            "header has the wrong value ({} bytes, expected {})",
+            given.len(),
+            check.secret.len()
+        ),
+    };
+    if check.enforce {
+        tracing::debug!(path = %request.uri().path(), "refused: {reason}");
         refuse(StatusCode::FORBIDDEN, "acceso directo no permitido; usa https://api.illapalabs.org")
+    } else {
+        tracing::warn!(path = %request.uri().path(), "would refuse (report only): {reason}");
+        next.run(request).await
     }
 }
 
