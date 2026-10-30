@@ -12,6 +12,8 @@ pub struct Config {
     pub database_url: String,
     pub address: String,
     pub senamhi_wfs_url: String,
+    /// Key for the Cloudflare relay (`relay/`), when `SENAMHI_WFS_URL` points to it
+    pub senamhi_relay_key: Option<String>,
     /// How often SENAMHI is asked again
     pub refresh_every: Duration,
     /// `false` turns off the background refresh (for example, to read an existing database only)
@@ -30,6 +32,7 @@ impl Config {
             database_url: var("DATABASE_URL").unwrap_or_else(|| format!("postgres://{user}@localhost/illapa")),
             address: var("ILLAPA_ADDR").unwrap_or_else(|| "127.0.0.1:8080".into()),
             senamhi_wfs_url: var("SENAMHI_WFS_URL").unwrap_or_else(|| SENAMHI_WFS.into()),
+            senamhi_relay_key: var("SENAMHI_RELAY_KEY"),
             refresh_every: Duration::from_secs(var("REFRESH_SECS").and_then(|value| value.parse().ok()).unwrap_or(1800)),
             refresh_enabled: var("REFRESH_ENABLED").is_none_or(|value| value != "false"),
             open_meteo_url: var("OPEN_METEO_URL").unwrap_or_else(|| OPEN_METEO.into()),

@@ -1,0 +1,9 @@
+{
+  // Puente hacia el WFS del SENAMHI para la API (ver src/index.ts y docs/DEPLOY.md).
+  // Desplegar desde esta carpeta: npx wrangler deploy
+  "name": "illapa-senamhi-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "observability": { "enabled": true }
+}

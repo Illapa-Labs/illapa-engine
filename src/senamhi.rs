@@ -21,15 +21,28 @@ const ATTEMPTS: u32 = 2;
 const LAYER_TIMEOUT: Duration = Duration::from_secs(90);
 const SPATIAL_QUERY_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// Header with the key shared with the Cloudflare relay (`relay/`), when the API reaches SENAMHI through it.
+const RELAY_KEY_HEADER: &str = "x-illapa-relay-key";
+
 #[derive(Clone)]
 pub struct Senamhi {
     http: reqwest::Client,
     wfs_url: String,
+    /// Key for the relay; `None` when the API talks to SENAMHI directly
+    relay_key: Option<String>,
 }
 
 impl Senamhi {
-    pub fn new(http: reqwest::Client, wfs_url: String) -> Self {
-        Self { http, wfs_url }
+    pub fn new(http: reqwest::Client, wfs_url: String, relay_key: Option<String>) -> Self {
+        Self { http, wfs_url, relay_key }
+    }
+
+    /// Adds the relay key to a request, if there is one.
+    fn with_key(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        match &self.relay_key {
+            Some(key) => request.header(RELAY_KEY_HEADER, key),
+            None => request,
+        }
     }
 
     /// A whole layer as GeoJSON. `extra` is appended to the query string (for example `&propertyName=...`).
@@ -42,7 +55,12 @@ impl Senamhi {
         loop {
             let started = Instant::now();
             let result: Result<Value> = async {
-                let response = self.http.get(&url).timeout(LAYER_TIMEOUT).send().await?.error_for_status()?;
+                let response = self
+                    .with_key(self.http.get(&url))
+                    .timeout(LAYER_TIMEOUT)
+                    .send()
+                    .await?
+                    .error_for_status()?;
                 Ok(response.json().await?)
             }
             .await;
@@ -86,8 +104,7 @@ impl Senamhi {
             ("cql_filter", filter.as_str()),
         ];
         let response = self
-            .http
-            .post(&self.wfs_url)
+            .with_key(self.http.post(&self.wfs_url))
             .timeout(SPATIAL_QUERY_TIMEOUT)
             .form(&form)
             .send()
