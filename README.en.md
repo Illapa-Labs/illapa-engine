@@ -23,7 +23,7 @@ The API of [Illapa Labs](https://github.com/Illapa-Labs). It asks SENAMHI (Peru'
 | `GET /v1/departamentos` | The 25 departments with their population, highest level and how many districts have a warning |
 | `GET /v1/provincias` | The provinces, with the same data |
 | `GET /v1/distritos` | The districts with their rain and ravine levels, and the populated centers and people in warning areas, by level |
-| `GET /v1/pronostico` | The hourly rain forecast (36 hours) on a 0.2° grid (about 22 km) over Peru, from Open-Meteo. `503` until the first forecast |
+| `GET /v1/pronostico` | The hourly rain forecast (36 hours) on a 0.2° grid (about 22 km) over Peru, from the UK Met Office global 10 km model via Open-Meteo (CC BY-SA 4.0). `503` until the first forecast |
 | `GET /healthz` | `ok` if the API is up |
 
 `/v1/provincias` and `/v1/distritos` accept these filters:
@@ -48,7 +48,7 @@ Every 30 minutes, in the background:
 2. It downloads the ravine activation warning and the populated centers inside those areas, with their population.
 3. It matches everything with INEI's districts (2017 census) and saves it in Postgres in a single transaction: if something fails, the previous data keeps being served.
 
-Every 12 hours it asks Open-Meteo for the rain forecast at about 3,070 points over Peru, in batches with pauses to respect its limits (it takes about 7 minutes). Two runs a day fit the daily limit of its free plan; a finer grid or more runs would not.
+Every 12 hours it asks Open-Meteo for the UK Met Office rain forecast at about 3,070 points over Peru, in batches with pauses to respect its limits (it takes about 7 minutes). Two runs a day fit the daily limit of its free plan; a finer grid or more runs would not.
 
 On start it serves the last saved warning and forecast, so there is no need to wait for the first refresh.
 
@@ -107,7 +107,7 @@ Configuration goes in environment variables (see [.env.example](.env.example)), 
 
 ## Data and attribution
 
-This API uses data from SENAMHI (warnings and district boundaries), INEI (population, 2017 census) and [Open-Meteo](https://open-meteo.com) (forecast, CC BY 4.0: it must be credited; its free API is for non-commercial use only). The AGPL license covers the code, not the data. The license status of each source is in the [site's DATOS.en.md](https://github.com/Illapa-Labs/peru-alerta-lluvia/blob/main/DATOS.en.md): the reuse conditions of SENAMHI and INEI are **still to be confirmed**.
+This API uses data from SENAMHI (warnings and district boundaries), INEI (population, 2017 census) and the [UK Met Office](https://www.metoffice.gov.uk) via [Open-Meteo](https://open-meteo.com) (forecast; the Met Office data is CC BY-SA 4.0: it must be credited and anything derived from it shared under the same licence; Open-Meteo's free API is for non-commercial use only). The AGPL license covers the code, not the data. The license status of each source is in the [site's DATOS.en.md](https://github.com/Illapa-Labs/peru-alerta-lluvia/blob/main/DATOS.en.md): the reuse conditions of SENAMHI and INEI are **still to be confirmed**.
 
 ## License
 
