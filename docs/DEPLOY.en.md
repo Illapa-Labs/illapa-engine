@@ -70,6 +70,27 @@ fly certs add api.illapalabs.org --app illapa-engine
 
 `fly certs` says which DNS records to create. In Cloudflare, create a `CNAME` from `api` to `illapa-engine.fly.dev`, **proxied** (orange cloud), plus the validation records Fly asks for. Then create the cache rule described in the README.
 
+## 6. Protection against abuse
+
+The API is public and read-only: nothing can be stolen or changed, but someone can try to flood it. These layers make that cheap.
+
+**In the API** (already included, see `src/protection.rs`):
+- The data routes only answer requests that carry the secret header `x-illapa-origin`, which Cloudflare adds. Anyone calling `illapa-engine.fly.dev` directly gets `403`. `/healthz` stays open for Fly's health checks.
+- Routes without filters refuse any parameter, and `/v1/provincias` and `/v1/distritos` refuse unknown ones (`400`): a random parameter cannot be used to dodge the cache.
+- It handles at most 128 requests at a time and none lasts more than 10 seconds; anything beyond that gets `503` at once.
+
+**In Cloudflare** (in the `illapalabs.org` dashboard):
+
+1. **The secret header.** Create the key, store it in Fly and copy it to the clipboard, without writing it to any file:
+
+   ```bash
+   KEY=$(openssl rand -hex 32) && fly secrets set ORIGIN_SECRET="$KEY" --app illapa-engine --stage && printf '%s' "$KEY" | pbcopy; unset KEY
+   ```
+
+   In *Rules → Transform Rules → Modify Request Header*, create a rule for *Hostname* equal to `api.illapalabs.org` that **sets** (*Set static*) the header `x-illapa-origin` to the copied key. Deploy the rule **before** `fly deploy`: if the API required the header before Cloudflare sent it, it would refuse everything.
+2. **The cache key.** In the API's cache rule, under *Cache key → Query string*, choose *Include only* with `departamento`, `provincia`, `nivel_minimo`, `solo_avisos` and `limite`. Any other parameter is ignored and the response comes from the cache.
+3. **Per-visitor limit.** In *Security → WAF → Rate limiting rules*, create a rule for `api.illapalabs.org` that counts by IP and blocks for a few seconds anyone above, for example, 60 requests in 10 seconds. The limits each plan allows are in [Cloudflare's documentation](https://developers.cloudflare.com/waf/rate-limiting-rules/).
+
 ## Staging
 
 To test before production: another Fly app (for example `illapa-engine-staging`) with its own Supabase project, deployed with `fly deploy --app illapa-engine-staging` and with `ILLAPA_ENV=staging` (`fly secrets set ILLAPA_ENV=staging --app illapa-engine-staging`).

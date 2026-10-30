@@ -4,18 +4,22 @@
 use anyhow::{Context, Result};
 use axum::{
     Router,
+    error_handling::HandleErrorLayer,
     http::{HeaderValue, header},
+    middleware,
     routing::get,
 };
 use serde_json::Value;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
+use tower::{ServiceBuilder, limit::ConcurrencyLimitLayer, load_shed::LoadShedLayer, timeout::TimeoutLayer};
 use tower_http::{compression::CompressionLayer, cors::CorsLayer, set_header::SetResponseHeaderLayer, trace::TraceLayer};
 
 mod config;
 mod forecast;
 mod geometry;
+mod protection;
 mod refresh;
 mod routes;
 mod senamhi;
@@ -139,13 +143,35 @@ async fn main() -> Result<()> {
         tracing::info!("background refresh is off (REFRESH_ENABLED=false)");
     }
 
-    let app = Router::new()
-        .route("/healthz", get(routes::health))
+    // Routes with filters, and routes that take no parameters at all (see protection.rs)
+    let filtered = Router::new()
+        .route("/v1/provincias", get(routes::provincias))
+        .route("/v1/distritos", get(routes::distritos));
+    let fixed = Router::new()
         .route("/v1/aviso", get(routes::aviso))
         .route("/v1/departamentos", get(routes::departamentos))
-        .route("/v1/provincias", get(routes::provincias))
-        .route("/v1/distritos", get(routes::distritos))
         .route("/v1/pronostico", get(routes::pronostico))
+        .route_layer(middleware::from_fn(protection::reject_query));
+    let mut data = filtered.merge(fixed);
+    match &config.origin_secret {
+        Some(secret) => {
+            data = data.route_layer(middleware::from_fn_with_state(
+                Arc::<str>::from(secret.as_str()),
+                protection::require_origin_secret,
+            ));
+        }
+        None => tracing::warn!("ORIGIN_SECRET is not set: the data routes answer requests from anywhere, not only Cloudflare"),
+    }
+
+    let app = data
+        .route("/healthz", get(routes::health))
+        .layer(
+            ServiceBuilder::new()
+                .layer(HandleErrorLayer::new(protection::overloaded))
+                .layer(LoadShedLayer::new())
+                .layer(ConcurrencyLimitLayer::new(protection::MAX_CONCURRENT_REQUESTS))
+                .layer(TimeoutLayer::new(protection::REQUEST_TIMEOUT)),
+        )
         // Each data route sets how long it can be kept (routes.rs); anything else is not cached.
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CACHE_CONTROL,

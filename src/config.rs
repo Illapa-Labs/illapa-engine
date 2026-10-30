@@ -18,6 +18,8 @@ pub struct Config {
     pub refresh_every: Duration,
     /// `false` turns off the background refresh (for example, to read an existing database only)
     pub refresh_enabled: bool,
+    /// Secret that Cloudflare adds to every request; when set, requests without it are refused (see protection.rs)
+    pub origin_secret: Option<String>,
     pub open_meteo_url: String,
     /// How often the forecast is asked again
     pub forecast_every: Duration,
@@ -35,6 +37,7 @@ impl Config {
             senamhi_relay_key: var("SENAMHI_RELAY_KEY"),
             refresh_every: Duration::from_secs(var("REFRESH_SECS").and_then(|value| value.parse().ok()).unwrap_or(1800)),
             refresh_enabled: var("REFRESH_ENABLED").is_none_or(|value| value != "false"),
+            origin_secret: var("ORIGIN_SECRET"),
             open_meteo_url: var("OPEN_METEO_URL").unwrap_or_else(|| OPEN_METEO.into()),
             forecast_every: Duration::from_secs(var("FORECAST_REFRESH_SECS").and_then(|value| value.parse().ok()).unwrap_or(21_600)),
         }

@@ -70,6 +70,27 @@ fly certs add api.illapalabs.org --app illapa-engine
 
 `fly certs` dice qué registros DNS crear. En Cloudflare, crea un `CNAME` de `api` hacia `illapa-engine.fly.dev`, **con proxy** (nube naranja), y los registros de validación que pida Fly. Después crea la regla de caché descrita en el README.
 
+## 6. Protección contra abusos
+
+La API es pública y de solo lectura: no se puede robar ni cambiar nada, pero sí intentar saturarla. Estas capas lo hacen barato.
+
+**En la API** (ya incluido, ver `src/protection.rs`):
+- Las rutas de datos solo responden a peticiones que traen la cabecera secreta `x-illapa-origin`, que agrega Cloudflare. Quien llame directo a `illapa-engine.fly.dev` recibe `403`. `/healthz` sigue abierta para los chequeos de Fly.
+- Las rutas sin filtros rechazan cualquier parámetro, y `/v1/provincias` y `/v1/distritos` los que no conocen (`400`): así un parámetro al azar no sirve para esquivar la caché.
+- Atiende como mucho 128 peticiones a la vez y ninguna dura más de 10 segundos; lo que pase de ahí recibe `503` al instante.
+
+**En Cloudflare** (en el panel de `illapalabs.org`):
+
+1. **La cabecera secreta.** Crea la clave, guárdala en Fly y cópiala al portapapeles, sin escribirla en ningún archivo:
+
+   ```bash
+   KEY=$(openssl rand -hex 32) && fly secrets set ORIGIN_SECRET="$KEY" --app illapa-engine --stage && printf '%s' "$KEY" | pbcopy; unset KEY
+   ```
+
+   En *Rules → Transform Rules → Modify Request Header*, crea una regla para *Hostname* igual a `api.illapalabs.org` que **ponga** (*Set static*) la cabecera `x-illapa-origin` con la clave copiada. Despliega la regla **antes** de `fly deploy`: si la API empieza a exigir la cabecera antes de que Cloudflare la mande, rechazaría todo.
+2. **La clave de caché.** En la regla de caché de la API, en *Cache key → Query string*, elige *Include only* con `departamento`, `provincia`, `nivel_minimo`, `solo_avisos` y `limite`. Cualquier otro parámetro se ignora y la respuesta sale de la caché.
+3. **Límite por visitante.** En *Security → WAF → Rate limiting rules*, crea una regla para `api.illapalabs.org` que cuente por IP y bloquee unos segundos a quien pase de, por ejemplo, 60 peticiones en 10 segundos. Los límites que admite cada plan están en la [documentación de Cloudflare](https://developers.cloudflare.com/waf/rate-limiting-rules/).
+
 ## Staging
 
 Para probar antes de producción: otra app de Fly (por ejemplo `illapa-engine-staging`) con su propio proyecto de Supabase, desplegada con `fly deploy --app illapa-engine-staging` y con `ILLAPA_ENV=staging` (`fly secrets set ILLAPA_ENV=staging --app illapa-engine-staging`).
