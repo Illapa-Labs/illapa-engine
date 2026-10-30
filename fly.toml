@@ -2,9 +2,10 @@
 # Ver docs/DEPLOY.md.
 
 app = "illapa-engine"
-# Junto a la base de Supabase (us-east-1, Virginia): cada refresco escribe cientos de filas, y lejos de la base
-# cada una tardaría unos 120 ms. Los usuarios en el Perú no lo notan, porque los atiende el CDN.
-primary_region = "iad"
+# São Paulo, por dos razones: el servidor del SENAMHI no acepta conexiones desde EE. UU. (probado desde Virginia:
+# la conexión se agota), y la base de Supabase está en la misma región (sa-east-1), así que cada refresco escribe
+# rápido. Los usuarios en el Perú no notan dónde corre, porque los atiende el CDN.
+primary_region = "gru"
 
 [build]
   dockerfile = "Dockerfile"
