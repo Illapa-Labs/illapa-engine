@@ -127,7 +127,9 @@ pub struct RawDistrict {
     pub people: ByLevel,
 }
 
+/// Unknown parameters are refused (400): they would only serve to dodge the CDN cache.
 #[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct Filters {
     /// Department ubigeo (2 digits) or name, for example `15` or `lima`
     pub departamento: Option<String>,

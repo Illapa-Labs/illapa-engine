@@ -4,18 +4,22 @@
 use anyhow::{Context, Result};
 use axum::{
     Router,
+    error_handling::HandleErrorLayer,
     http::{HeaderValue, header},
+    middleware,
     routing::get,
 };
 use serde_json::Value;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
+use tower::{ServiceBuilder, limit::ConcurrencyLimitLayer, load_shed::LoadShedLayer, timeout::TimeoutLayer};
 use tower_http::{compression::CompressionLayer, cors::CorsLayer, set_header::SetResponseHeaderLayer, trace::TraceLayer};
 
 mod config;
 mod forecast;
 mod geometry;
+mod protection;
 mod refresh;
 mod routes;
 mod senamhi;
@@ -78,10 +82,16 @@ async fn main() -> Result<()> {
         .fetch_optional(&pool)
         .await
         .context("saved warning")?;
-    let saved_forecast: Option<sqlx::types::Json<Value>> = sqlx::query_scalar("select datos from pronostico where id = 1")
-        .fetch_optional(&pool)
-        .await
-        .context("saved forecast")?;
+    let saved_forecast: Option<(sqlx::types::Json<Value>, chrono::DateTime<chrono::Utc>)> =
+        sqlx::query_as("select datos, actualizado from pronostico where id = 1")
+            .fetch_optional(&pool)
+            .await
+            .context("saved forecast")?;
+    // How old the saved forecast is: a restart does not ask Open-Meteo again if it is still fresh
+    let forecast_age = saved_forecast
+        .as_ref()
+        .and_then(|(_, saved_at)| (chrono::Utc::now() - *saved_at).to_std().ok());
+    let saved_forecast = saved_forecast.map(|(json, _)| json);
 
     let state = AppState {
         pool,
@@ -120,6 +130,13 @@ async fn main() -> Result<()> {
         let every = config.forecast_every;
         let open_meteo_url = config.open_meteo_url.clone();
         tokio::spawn(async move {
+            // Open-Meteo limits calls per hour, and every run asks for about 1 450 points: restarting the API (a
+            // deploy, for example) must not ask again while the saved forecast is still fresh.
+            if let Some(age) = forecast_age.filter(|age| *age < every) {
+                let wait = every - age;
+                tracing::info!(minutes = wait.as_secs() / 60, "saved forecast is fresh, next one later");
+                tokio::time::sleep(wait).await;
+            }
             loop {
                 let result = async {
                     let forecast = forecast::fetch(&http, &open_meteo_url).await?;
@@ -128,24 +145,57 @@ async fn main() -> Result<()> {
                     anyhow::Ok(())
                 }
                 .await;
-                match result {
-                    Ok(()) => tracing::info!("forecast refreshed"),
-                    Err(error) => tracing::warn!("forecast refresh failed, the previous one stays: {error:#}"),
-                }
-                tokio::time::sleep(every).await;
+                let wait = match result {
+                    Ok(()) => {
+                        tracing::info!("forecast refreshed");
+                        every
+                    }
+                    Err(error) => {
+                        // A failure (Open-Meteo's hourly limit, for example) is retried in an hour, not in 6
+                        tracing::warn!("forecast refresh failed, the previous one stays: {error:#}");
+                        every.min(Duration::from_secs(3600))
+                    }
+                };
+                tokio::time::sleep(wait).await;
             }
         });
     } else {
         tracing::info!("background refresh is off (REFRESH_ENABLED=false)");
     }
 
-    let app = Router::new()
-        .route("/healthz", get(routes::health))
+    // Routes with filters, and routes that take no parameters at all (see protection.rs)
+    let filtered = Router::new()
+        .route("/v1/provincias", get(routes::provincias))
+        .route("/v1/distritos", get(routes::distritos));
+    let fixed = Router::new()
         .route("/v1/aviso", get(routes::aviso))
         .route("/v1/departamentos", get(routes::departamentos))
-        .route("/v1/provincias", get(routes::provincias))
-        .route("/v1/distritos", get(routes::distritos))
         .route("/v1/pronostico", get(routes::pronostico))
+        .route_layer(middleware::from_fn(protection::reject_query));
+    let mut data = filtered.merge(fixed);
+    match &config.origin_secret {
+        Some(secret) => {
+            if !config.origin_enforce {
+                tracing::warn!("ORIGIN_CHECK=report: requests without the Cloudflare header are logged, not refused");
+            }
+            let check = protection::OriginCheck {
+                secret: Arc::from(secret.as_str()),
+                enforce: config.origin_enforce,
+            };
+            data = data.route_layer(middleware::from_fn_with_state(check, protection::require_origin_secret));
+        }
+        None => tracing::warn!("ORIGIN_SECRET is not set: the data routes answer requests from anywhere, not only Cloudflare"),
+    }
+
+    let app = data
+        .route("/healthz", get(routes::health))
+        .layer(
+            ServiceBuilder::new()
+                .layer(HandleErrorLayer::new(protection::overloaded))
+                .layer(LoadShedLayer::new())
+                .layer(ConcurrencyLimitLayer::new(protection::MAX_CONCURRENT_REQUESTS))
+                .layer(TimeoutLayer::new(protection::REQUEST_TIMEOUT)),
+        )
         // Each data route sets how long it can be kept (routes.rs); anything else is not cached.
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CACHE_CONTROL,
