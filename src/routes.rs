@@ -85,6 +85,18 @@ pub async fn aviso(State(state): State<AppState>) -> Response {
     }
 }
 
+/// The hourly rain forecast on the grid over Peru (see `forecast.rs` for the format).
+pub async fn pronostico(State(state): State<AppState>) -> Response {
+    match state.pronostico.read().await.as_ref() {
+        Some(forecast) => Json(forecast.clone()).into_response(),
+        None => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "todavía no hay un pronóstico cargado; vuelve a intentar en unos minutos" })),
+        )
+            .into_response(),
+    }
+}
+
 #[derive(Deserialize, Default)]
 pub struct Filters {
     /// Department ubigeo (2 digits) or name, for example `15` or `lima`
