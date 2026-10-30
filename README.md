@@ -38,7 +38,7 @@ La API de [Illapa Labs](https://github.com/Illapa-Labs). Pregunta al SENAMHI por
 
 Ejemplo: `GET /v1/distritos?departamento=lima&solo_avisos=true`.
 
-Las listas incluyen `actualizado` (cuándo se bajaron los datos), `fecha_quebradas` (la fecha del aviso de quebradas) y `fuente`. Las respuestas van comprimidas y se pueden guardar en caché 5 minutos.
+Las listas incluyen `actualizado` (cuándo se bajaron los datos), `fecha_quebradas` (la fecha del aviso de quebradas) y `fuente`. Las respuestas van comprimidas; cuánto se pueden guardar está en [Caché y CDN](#caché-y-cdn). Hasta el primer refresco, las listas responden `503`: no saber todavía no es lo mismo que no tener avisos.
 
 ## Cómo funciona
 
@@ -51,6 +51,29 @@ Cada 30 minutos, en segundo plano:
 Cada 6 horas pide a Open-Meteo el pronóstico de lluvia para unos 1 450 puntos sobre el Perú, en tandas con pausas para respetar sus límites (tarda unos 3 minutos).
 
 Al arrancar sirve el último aviso y el último pronóstico guardados, así que no hay que esperar al primer refresco.
+
+## Caché y CDN
+
+Los datos no cambian con cada visita: el aviso cada media hora y el pronóstico cada 6 horas. Por eso la API arma las listas en memoria después de cada refresco (ninguna petición consulta la base ni al SENAMHI) y le dice al navegador y al CDN cuánto pueden guardar cada respuesta:
+
+| Datos | Navegador (`Cache-Control`) | CDN (`CDN-Cache-Control`) |
+|---|---|---|
+| Aviso, departamentos, provincias, distritos | 5 min, y 25 min más sirviendo la copia anterior mientras pide la nueva | 10 min, y 20 min más sirviendo la anterior |
+| Pronóstico | 30 min, y 1 h más sirviendo la anterior | igual |
+| Errores (`503`) y `/healthz` | no se guardan (`no-store`) | no se guardan |
+
+Todas las respuestas con datos permiten además seguir sirviendo la última copia hasta un día si la API falla (`stale-if-error`): un aviso de hace un rato es mejor que una pantalla vacía. No se usa `s-maxage`, porque impide que el CDN sirva la copia anterior mientras pide la nueva.
+
+### Regla de Cloudflare (al desplegar)
+
+Con la API detrás de Cloudflare, miles de visitas se convierten en unas pocas peticiones a la API cada 10 minutos. Pero **Cloudflare no guarda respuestas JSON por defecto**: hace falta una regla.
+
+1. El registro DNS de `api.illapalabs.org` debe ir **con proxy** (nube naranja).
+2. En *Caching → Cache Rules*, crear una regla para `api.illapalabs.org` cuya ruta empiece con `/v1/`, con **Eligible for cache** y respetando las cabeceras del origen (*Edge TTL* y *Browser TTL*: usar el `Cache-Control` del origen).
+3. No activar *Always Online* para esta ruta: con él, Cloudflare ignora `stale-while-revalidate` y `stale-if-error`.
+4. Comprobar: `curl -sI https://api.illapalabs.org/v1/aviso | grep -i cf-cache-status` debe dar `HIT` a partir de la segunda petición (`MISS` la primera, `UPDATING` mientras renueva).
+
+Los nombres de las opciones en el panel de Cloudflare cambian con el tiempo: si no coinciden, ver [Cache Rules](https://developers.cloudflare.com/cache/how-to/cache-rules/settings/) y [Origin Cache Control](https://developers.cloudflare.com/cache/concepts/cache-control/).
 
 ## Correr en local
 
