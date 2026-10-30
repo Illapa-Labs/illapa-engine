@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Hourly rain forecast for the next hours, from Open-Meteo (CC BY 4.0; its free API is for non-commercial use),
-//! on a fixed grid of about 33 km over Peru (`data/malla-pronostico.json`).
+//! on a fixed grid of 0.2° (about 22 km) over Peru (`data/malla-pronostico.json`).
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
@@ -8,11 +8,13 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::time::Duration;
 
-/// Hours from the current one: 24 plus some margin, because it is refreshed every 6 hours.
-const HOURS: usize = 30;
-/// Open-Meteo allows 600 calls a minute and 10 000 a day. It is not clear whether a request with many points
-/// counts as one call or one per point, so points are asked in small batches with pauses: even counting every
-/// point, that is about 1 450 calls per run.
+/// Hours from the current one: it is refreshed every 12 hours, so 36 always cover the next 24. More hours do not
+/// cost more calls.
+const HOURS: usize = 36;
+/// Open-Meteo allows 600 calls a minute, 5 000 an hour and 10 000 a day. It is not clear whether a request with
+/// many points counts as one call or one per point, so points are asked in small batches with pauses: even counting
+/// every point, a run is about 3 070 calls, and two runs a day stay under the daily limit. A finer grid or more runs
+/// would not.
 const POINTS_PER_REQUEST: usize = 290;
 const PAUSE: Duration = Duration::from_secs(40);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
@@ -31,6 +33,11 @@ struct Grid {
 
 fn grid() -> Result<Grid> {
     serde_json::from_str(include_str!("../data/malla-pronostico.json")).context("forecast grid")
+}
+
+/// Whether a saved forecast was made on the current grid (a new grid needs a new forecast right away).
+pub fn on_current_grid(forecast: &Value) -> bool {
+    grid().is_ok_and(|grid| forecast["paso"].as_f64() == Some(grid.step) && forecast["horas"].as_u64() == Some(HOURS as u64))
 }
 
 /// Asks Open-Meteo for the whole grid. Values are tenths of mm of rain in the previous hour, per hour, row after
@@ -120,5 +127,13 @@ mod tests {
         let grid = grid().unwrap();
         assert!(!grid.cells.is_empty());
         assert!(grid.cells.iter().all(|cell| *cell < grid.cols * grid.rows));
+    }
+
+    #[test]
+    fn a_forecast_on_another_grid_is_not_reused() {
+        let step = grid().unwrap().step;
+        assert!(on_current_grid(&json!({ "paso": step, "horas": HOURS })));
+        assert!(!on_current_grid(&json!({ "paso": 0.3, "horas": 30 })));
+        assert!(!on_current_grid(&json!({})));
     }
 }

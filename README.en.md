@@ -23,7 +23,7 @@ The API of [Illapa Labs](https://github.com/Illapa-Labs). It asks SENAMHI (Peru'
 | `GET /v1/departamentos` | The 25 departments with their population, highest level and how many districts have a warning |
 | `GET /v1/provincias` | The provinces, with the same data |
 | `GET /v1/distritos` | The districts with their rain and ravine levels, and the populated centers and people in warning areas, by level |
-| `GET /v1/pronostico` | The hourly rain forecast (30 hours) on a grid of about 33 km over Peru, from Open-Meteo. `503` until the first forecast |
+| `GET /v1/pronostico` | The hourly rain forecast (36 hours) on a 0.2° grid (about 22 km) over Peru, from Open-Meteo. `503` until the first forecast |
 | `GET /healthz` | `ok` if the API is up |
 
 `/v1/provincias` and `/v1/distritos` accept these filters:
@@ -48,13 +48,13 @@ Every 30 minutes, in the background:
 2. It downloads the ravine activation warning and the populated centers inside those areas, with their population.
 3. It matches everything with INEI's districts (2017 census) and saves it in Postgres in a single transaction: if something fails, the previous data keeps being served.
 
-Every 6 hours it asks Open-Meteo for the rain forecast at about 1,450 points over Peru, in batches with pauses to respect its limits (it takes about 3 minutes).
+Every 12 hours it asks Open-Meteo for the rain forecast at about 3,070 points over Peru, in batches with pauses to respect its limits (it takes about 7 minutes). Two runs a day fit the daily limit of its free plan; a finer grid or more runs would not.
 
 On start it serves the last saved warning and forecast, so there is no need to wait for the first refresh.
 
 ## Cache and CDN
 
-The data does not change with every visit: the warning every half hour and the forecast every 6 hours. So the API builds the lists in memory after each refresh (no request queries the database or SENAMHI) and tells browsers and CDNs how long they may keep each response:
+The data does not change with every visit: the warning every half hour and the forecast every 12 hours. So the API builds the lists in memory after each refresh (no request queries the database or SENAMHI) and tells browsers and CDNs how long they may keep each response:
 
 | Data | Browser (`Cache-Control`) | CDN (`CDN-Cache-Control`) |
 |---|---|---|

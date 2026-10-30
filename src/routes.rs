@@ -23,7 +23,7 @@ pub enum Freshness {
     /// may serve the previous copy while they fetch the new one, so the data is never more than about half an hour
     /// older than the last refresh.
     Warnings,
-    /// The forecast, refreshed every 6 hours: half an hour everywhere.
+    /// The forecast, refreshed every 12 hours: half an hour everywhere.
     Forecast,
 }
 

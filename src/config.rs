@@ -42,7 +42,7 @@ impl Config {
             origin_secret: var("ORIGIN_SECRET"),
             origin_enforce: var("ORIGIN_CHECK").is_none_or(|value| value != "report"),
             open_meteo_url: var("OPEN_METEO_URL").unwrap_or_else(|| OPEN_METEO.into()),
-            forecast_every: Duration::from_secs(var("FORECAST_REFRESH_SECS").and_then(|value| value.parse().ok()).unwrap_or(21_600)),
+            forecast_every: Duration::from_secs(var("FORECAST_REFRESH_SECS").and_then(|value| value.parse().ok()).unwrap_or(43_200)),
         }
     }
 }

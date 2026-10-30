@@ -23,7 +23,7 @@ La API de [Illapa Labs](https://github.com/Illapa-Labs). Pregunta al SENAMHI por
 | `GET /v1/departamentos` | Los 25 departamentos con su población, su nivel más alto y cuántos distritos tienen aviso |
 | `GET /v1/provincias` | Las provincias, con los mismos datos |
 | `GET /v1/distritos` | Los distritos con su nivel de lluvia y de quebradas, y los centros poblados y personas en zona de aviso, por nivel |
-| `GET /v1/pronostico` | La lluvia pronosticada hora por hora (30 horas) en una malla de unos 33 km sobre el Perú, de Open-Meteo. `503` hasta el primer pronóstico |
+| `GET /v1/pronostico` | La lluvia pronosticada hora por hora (36 horas) en una malla de 0,2° (unos 22 km) sobre el Perú, de Open-Meteo. `503` hasta el primer pronóstico |
 | `GET /healthz` | `ok` si la API responde |
 
 `/v1/provincias` y `/v1/distritos` aceptan estos filtros:
@@ -48,13 +48,13 @@ Cada 30 minutos, en segundo plano:
 2. Baja el aviso de activación de quebradas y los centros poblados dentro de esas zonas, con su población.
 3. Cruza todo con los distritos del INEI (Censo 2017) y lo guarda en Postgres en una sola transacción: si algo falla, se siguen sirviendo los datos anteriores.
 
-Cada 6 horas pide a Open-Meteo el pronóstico de lluvia para unos 1 450 puntos sobre el Perú, en tandas con pausas para respetar sus límites (tarda unos 3 minutos).
+Cada 12 horas pide a Open-Meteo el pronóstico de lluvia para unos 3 070 puntos sobre el Perú, en tandas con pausas para respetar sus límites (tarda unos 7 minutos). Dos corridas al día caben en el límite diario de su plan gratuito; una malla más fina o más corridas no.
 
 Al arrancar sirve el último aviso y el último pronóstico guardados, así que no hay que esperar al primer refresco.
 
 ## Caché y CDN
 
-Los datos no cambian con cada visita: el aviso cada media hora y el pronóstico cada 6 horas. Por eso la API arma las listas en memoria después de cada refresco (ninguna petición consulta la base ni al SENAMHI) y le dice al navegador y al CDN cuánto pueden guardar cada respuesta:
+Los datos no cambian con cada visita: el aviso cada media hora y el pronóstico cada 12 horas. Por eso la API arma las listas en memoria después de cada refresco (ninguna petición consulta la base ni al SENAMHI) y le dice al navegador y al CDN cuánto pueden guardar cada respuesta:
 
 | Datos | Navegador (`Cache-Control`) | CDN (`CDN-Cache-Control`) |
 |---|---|---|
