@@ -23,7 +23,7 @@ La API de [Illapa Labs](https://github.com/Illapa-Labs). Pregunta al SENAMHI por
 | `GET /v1/departamentos` | Los 25 departamentos con su población, su nivel más alto y cuántos distritos tienen aviso |
 | `GET /v1/provincias` | Las provincias, con los mismos datos |
 | `GET /v1/distritos` | Los distritos con su nivel de lluvia y de quebradas, y los centros poblados y personas en zona de aviso, por nivel |
-| `GET /v1/pronostico` | La lluvia pronosticada hora por hora (36 horas) en una malla de 0,2° (unos 22 km) sobre el Perú, de Open-Meteo. `503` hasta el primer pronóstico |
+| `GET /v1/pronostico` | La lluvia pronosticada hora por hora (36 horas) en una malla de 0,2° (unos 22 km) sobre el Perú, del modelo global de 10 km del UK Met Office vía Open-Meteo (CC BY-SA 4.0). `503` hasta el primer pronóstico |
 | `GET /healthz` | `ok` si la API responde |
 
 `/v1/provincias` y `/v1/distritos` aceptan estos filtros:
@@ -48,7 +48,7 @@ Cada 30 minutos, en segundo plano:
 2. Baja el aviso de activación de quebradas y los centros poblados dentro de esas zonas, con su población.
 3. Cruza todo con los distritos del INEI (Censo 2017) y lo guarda en Postgres en una sola transacción: si algo falla, se siguen sirviendo los datos anteriores.
 
-Cada 12 horas pide a Open-Meteo el pronóstico de lluvia para unos 3 070 puntos sobre el Perú, en tandas con pausas para respetar sus límites (tarda unos 7 minutos). Dos corridas al día caben en el límite diario de su plan gratuito; una malla más fina o más corridas no.
+Cada 12 horas pide a Open-Meteo el pronóstico de lluvia del UK Met Office para unos 3 070 puntos sobre el Perú, en tandas con pausas para respetar sus límites (tarda unos 7 minutos). Dos corridas al día caben en el límite diario de su plan gratuito; una malla más fina o más corridas no.
 
 Al arrancar sirve el último aviso y el último pronóstico guardados, así que no hay que esperar al primer refresco.
 
@@ -107,7 +107,7 @@ La configuración va en variables de entorno (ver [.env.example](.env.example));
 
 ## Datos y atribución
 
-Esta API usa datos del SENAMHI (avisos y límites de distritos), del INEI (población, Censo 2017) y de [Open-Meteo](https://open-meteo.com) (pronóstico, CC BY 4.0: hay que citarlo; su API gratuita es solo para uso no comercial). La licencia AGPL cubre el código, no los datos. El estado de la licencia de cada fuente está en [DATOS.md de la web](https://github.com/Illapa-Labs/peru-alerta-lluvia/blob/main/DATOS.md): las condiciones de reutilización del SENAMHI y del INEI **todavía están por confirmar**.
+Esta API usa datos del SENAMHI (avisos y límites de distritos), del INEI (población, Censo 2017) y del [UK Met Office](https://www.metoffice.gov.uk) vía [Open-Meteo](https://open-meteo.com) (pronóstico; los datos del Met Office son CC BY-SA 4.0: hay que citarlos y compartir lo derivado con la misma licencia; la API gratuita de Open-Meteo es solo para uso no comercial). La licencia AGPL cubre el código, no los datos. El estado de la licencia de cada fuente está en [DATOS.md de la web](https://github.com/Illapa-Labs/peru-alerta-lluvia/blob/main/DATOS.md): las condiciones de reutilización del SENAMHI y del INEI **todavía están por confirmar**.
 
 ## Licencia
 

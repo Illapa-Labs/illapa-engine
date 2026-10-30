@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Hourly rain forecast for the next hours, from Open-Meteo (CC BY 4.0; its free API is for non-commercial use),
-//! on a fixed grid of 0.2° (about 22 km) over Peru (`data/malla-pronostico.json`).
+//! Hourly rain forecast for the next hours, on a fixed grid of 0.2° (about 22 km) over Peru
+//! (`data/malla-pronostico.json`). It comes from the UK Met Office global 10 km model, served by Open-Meteo (its free
+//! API is for non-commercial use). The Met Office data is CC BY-SA 4.0: it must be credited, and what is made from it
+//! (this forecast and the maps drawn from it) must be shared under the same licence.
+//!
+//! Of the models Open-Meteo offers, it was the one that best caught the heavy-rain days over the ravines of Chosica
+//! and Chaclacayo in the 2022-23 to 2024-25 rainy seasons, compared with SENAMHI's observed rainfall (PISCOp).
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
@@ -18,7 +23,10 @@ const HOURS: usize = 36;
 const POINTS_PER_REQUEST: usize = 290;
 const PAUSE: Duration = Duration::from_secs(40);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
-const SOURCE: &str = "Pronóstico: Open-Meteo (CC BY 4.0)";
+/// The Open-Meteo model. Without one, Open-Meteo picks ECMWF IFS for Peru.
+const MODEL: &str = "ukmo_global_deterministic_10km";
+const SOURCE: &str = "Pronóstico: UK Met Office (Crown copyright), vía Open-Meteo";
+const LICENSE: &str = "CC BY-SA 4.0";
 
 /// The grid: its north-west corner, step in degrees, size, and the cells (row * cols + col) near Peru.
 #[derive(Deserialize)]
@@ -35,9 +43,14 @@ fn grid() -> Result<Grid> {
     serde_json::from_str(include_str!("../data/malla-pronostico.json")).context("forecast grid")
 }
 
-/// Whether a saved forecast was made on the current grid (a new grid needs a new forecast right away).
+/// Whether a saved forecast was made on the current grid and with the current model (a new grid or model needs a
+/// new forecast right away).
 pub fn on_current_grid(forecast: &Value) -> bool {
-    grid().is_ok_and(|grid| forecast["paso"].as_f64() == Some(grid.step) && forecast["horas"].as_u64() == Some(HOURS as u64))
+    grid().is_ok_and(|grid| {
+        forecast["paso"].as_f64() == Some(grid.step)
+            && forecast["horas"].as_u64() == Some(HOURS as u64)
+            && forecast["modelo"].as_str() == Some(MODEL)
+    })
 }
 
 /// Asks Open-Meteo for the whole grid. Values are tenths of mm of rain in the previous hour, per hour, row after
@@ -56,7 +69,7 @@ pub async fn fetch(http: &reqwest::Client, open_meteo_url: &str) -> Result<Value
         let latitudes: Vec<String> = batch.iter().map(latitude).collect();
         let longitudes: Vec<String> = batch.iter().map(longitude).collect();
         let url = format!(
-            "{open_meteo_url}?latitude={}&longitude={}&hourly=precipitation&forecast_hours={HOURS}&timezone=GMT",
+            "{open_meteo_url}?latitude={}&longitude={}&hourly=precipitation&forecast_hours={HOURS}&timezone=GMT&models={MODEL}",
             latitudes.join(","),
             longitudes.join(",")
         );
@@ -103,6 +116,8 @@ pub async fn fetch(http: &reqwest::Client, open_meteo_url: &str) -> Result<Value
         "filas": grid.rows,
         "valores": values,
         "fuente": SOURCE,
+        "licencia": LICENSE,
+        "modelo": MODEL,
     }))
 }
 
@@ -132,8 +147,11 @@ mod tests {
     #[test]
     fn a_forecast_on_another_grid_is_not_reused() {
         let step = grid().unwrap().step;
-        assert!(on_current_grid(&json!({ "paso": step, "horas": HOURS })));
-        assert!(!on_current_grid(&json!({ "paso": 0.3, "horas": 30 })));
+        assert!(on_current_grid(&json!({ "paso": step, "horas": HOURS, "modelo": MODEL })));
+        assert!(!on_current_grid(&json!({ "paso": 0.3, "horas": 30, "modelo": MODEL })));
+        // A forecast from another model (or from before the model was saved) is asked again
+        assert!(!on_current_grid(&json!({ "paso": step, "horas": HOURS })));
+        assert!(!on_current_grid(&json!({ "paso": step, "horas": HOURS, "modelo": "ecmwf_ifs" })));
         assert!(!on_current_grid(&json!({})));
     }
 }
