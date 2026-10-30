@@ -23,6 +23,7 @@ La API de [Illapa Labs](https://github.com/Illapa-Labs). Pregunta al SENAMHI por
 | `GET /v1/departamentos` | Los 25 departamentos con su población, su nivel más alto y cuántos distritos tienen aviso |
 | `GET /v1/provincias` | Las provincias, con los mismos datos |
 | `GET /v1/distritos` | Los distritos con su nivel de lluvia y de quebradas, y los centros poblados y personas en zona de aviso, por nivel |
+| `GET /v1/pronostico` | La lluvia pronosticada hora por hora (30 horas) en una malla de unos 33 km sobre el Perú, de Open-Meteo. `503` hasta el primer pronóstico |
 | `GET /healthz` | `ok` si la API responde |
 
 `/v1/provincias` y `/v1/distritos` aceptan estos filtros:
@@ -47,7 +48,9 @@ Cada 30 minutos, en segundo plano:
 2. Baja el aviso de activación de quebradas y los centros poblados dentro de esas zonas, con su población.
 3. Cruza todo con los distritos del INEI (Censo 2017) y lo guarda en Postgres en una sola transacción: si algo falla, se siguen sirviendo los datos anteriores.
 
-Al arrancar sirve el último aviso guardado, así que no hay que esperar al primer refresco.
+Cada 6 horas pide a Open-Meteo el pronóstico de lluvia para unos 1 450 puntos sobre el Perú, en tandas con pausas para respetar sus límites (tarda unos 3 minutos).
+
+Al arrancar sirve el último aviso y el último pronóstico guardados, así que no hay que esperar al primer refresco.
 
 ## Correr en local
 
@@ -81,7 +84,7 @@ La configuración va en variables de entorno (ver [.env.example](.env.example));
 
 ## Datos y atribución
 
-Esta API usa datos del SENAMHI (avisos y límites de distritos) y del INEI (población, Censo 2017). La licencia AGPL cubre el código, no los datos. El estado de la licencia de cada fuente está en [DATOS.md de la web](https://github.com/Illapa-Labs/peru-alerta-lluvia/blob/main/DATOS.md): las condiciones de reutilización de ambas fuentes **todavía están por confirmar**.
+Esta API usa datos del SENAMHI (avisos y límites de distritos), del INEI (población, Censo 2017) y de [Open-Meteo](https://open-meteo.com) (pronóstico, CC BY 4.0: hay que citarlo; su API gratuita es solo para uso no comercial). La licencia AGPL cubre el código, no los datos. El estado de la licencia de cada fuente está en [DATOS.md de la web](https://github.com/Illapa-Labs/peru-alerta-lluvia/blob/main/DATOS.md): las condiciones de reutilización del SENAMHI y del INEI **todavía están por confirmar**.
 
 ## Licencia
 
