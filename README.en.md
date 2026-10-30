@@ -23,7 +23,7 @@ The API of [Illapa Labs](https://github.com/Illapa-Labs). It asks SENAMHI (Peru'
 | `GET /v1/departamentos` | The 25 departments with their population, highest level and how many districts have a warning |
 | `GET /v1/provincias` | The provinces, with the same data |
 | `GET /v1/distritos` | The districts with their rain and ravine levels, and the populated centers and people in warning areas, by level |
-| `GET /v1/pronostico` | The hourly rain forecast (36 hours) on a 0.2° grid (about 22 km) over Peru, from the UK Met Office global 10 km model via Open-Meteo (CC BY-SA 4.0). `503` until the first forecast |
+| `GET /v1/pronostico` | The hourly rain forecast (36 hours) on a 0.2° grid (about 22 km) over Peru and, in the `zonas` field, on 0.1° grids (the model's real resolution, about 11 km) over the areas with ravines: Lima Este, the north coast, Áncash, Cusco and Arequipa. It is the UK Met Office global 10 km model via Open-Meteo (CC BY-SA 4.0). `503` until the first forecast |
 | `GET /healthz` | `ok` if the API is up |
 
 `/v1/provincias` and `/v1/distritos` accept these filters:
@@ -48,7 +48,7 @@ Every 30 minutes, in the background:
 2. It downloads the ravine activation warning and the populated centers inside those areas, with their population.
 3. It matches everything with INEI's districts (2017 census) and saves it in Postgres in a single transaction: if something fails, the previous data keeps being served.
 
-Every 12 hours it asks Open-Meteo for the UK Met Office rain forecast at about 3,070 points over Peru, in batches with pauses to respect its limits (it takes about 7 minutes). Two runs a day fit the daily limit of its free plan; a finer grid or more runs would not.
+Every 12 hours it asks Open-Meteo for the UK Met Office rain forecast at about 3,070 points over Peru (0.2° grid) and about 800 more in the 0.1° zones (`data/zonas-pronostico.json`, regenerated with `scripts/generar-zonas-pronostico.py`), in batches with pauses to respect its limits (it takes about 10 minutes). Every point is counted as a call, because it is not clear whether Open-Meteo does: two runs a day are about 7,700 of the 10,000 a day of its free plan, and a test checks that it is not exceeded. To add a zone, take points from another or ask for fewer runs.
 
 On start it serves the last saved warning and forecast, so there is no need to wait for the first refresh.
 
