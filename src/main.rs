@@ -87,9 +87,11 @@ async fn main() -> Result<()> {
             .fetch_optional(&pool)
             .await
             .context("saved forecast")?;
-    // How old the saved forecast is: a restart does not ask Open-Meteo again if it is still fresh
+    // How old the saved forecast is: a restart does not ask Open-Meteo again if it is still fresh and on the current
+    // grid (after changing the grid, the first run comes right away)
     let forecast_age = saved_forecast
         .as_ref()
+        .filter(|(json, _)| forecast::on_current_grid(&json.0))
         .and_then(|(_, saved_at)| (chrono::Utc::now() - *saved_at).to_std().ok());
     let saved_forecast = saved_forecast.map(|(json, _)| json);
 
@@ -130,7 +132,7 @@ async fn main() -> Result<()> {
         let every = config.forecast_every;
         let open_meteo_url = config.open_meteo_url.clone();
         tokio::spawn(async move {
-            // Open-Meteo limits calls per hour, and every run asks for about 1 450 points: restarting the API (a
+            // Open-Meteo limits calls per hour, and every run asks for about 3 070 points: restarting the API (a
             // deploy, for example) must not ask again while the saved forecast is still fresh.
             if let Some(age) = forecast_age.filter(|age| *age < every) {
                 let wait = every - age;
