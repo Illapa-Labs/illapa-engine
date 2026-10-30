@@ -30,7 +30,25 @@ fly secrets set DATABASE_URL='postgresql://...' --app illapa-engine
 
 Las tablas y la población del INEI se crean solas al arrancar (migraciones).
 
-## 3. Desplegar
+## 3. El puente hacia el SENAMHI
+
+El servidor WFS del SENAMHI no acepta conexiones desde Fly.io (probado desde Virginia y São Paulo: la conexión se agota), pero sí desde la red de Cloudflare. Por eso la API le pregunta a través de un Worker de Cloudflare (`relay/`) que solo reenvía a ese servicio, solo con una clave compartida y diciendo quién consulta en el User-Agent. La API lo usa una vez cada media hora.
+
+Desplegar el Worker (desde `relay/`, con sesión de Cloudflare):
+
+```bash
+npx wrangler deploy
+```
+
+Crear la clave y ponerla en los dos lados, sin que quede escrita en ningún archivo:
+
+```bash
+KEY=$(openssl rand -hex 32) && printf '%s' "$KEY" | npx wrangler secret put RELAY_KEY && fly secrets set SENAMHI_RELAY_KEY="$KEY" --app illapa-engine --stage; unset KEY
+```
+
+`SENAMHI_WFS_URL` (en `fly.toml`) apunta al Worker. Si el SENAMHI llega a permitir la conexión directa, basta con borrar esa línea y el secreto.
+
+## 4. Desplegar
 
 Desde la carpeta del repositorio:
 
@@ -44,7 +62,7 @@ curl https://illapa-engine.fly.dev/healthz
 
 La máquina queda siempre encendida (`auto_stop_machines = "off"`): si se apagara cuando nadie la visita, dejaría de refrescar los datos. Las visitas las absorbe el CDN.
 
-## 4. El dominio `api.illapalabs.org`
+## 5. El dominio `api.illapalabs.org`
 
 ```bash
 fly certs add api.illapalabs.org --app illapa-engine

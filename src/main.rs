@@ -85,7 +85,7 @@ async fn main() -> Result<()> {
 
     let state = AppState {
         pool,
-        senamhi: senamhi::Senamhi::new(http.clone(), config.senamhi_wfs_url.clone()),
+        senamhi: senamhi::Senamhi::new(http.clone(), config.senamhi_wfs_url.clone(), config.senamhi_relay_key.clone()),
         aviso: Arc::new(RwLock::new(saved.map(|json| json.0))),
         pronostico: Arc::new(RwLock::new(saved_forecast.map(|json| json.0))),
         snapshot: Arc::new(RwLock::new(Arc::new(snapshot::Snapshot::default()))),

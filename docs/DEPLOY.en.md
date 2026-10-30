@@ -30,7 +30,25 @@ fly secrets set DATABASE_URL='postgresql://...' --app illapa-engine
 
 The tables and INEI population are created on start (migrations).
 
-## 3. Deploy
+## 3. The relay to SENAMHI
+
+SENAMHI's WFS server does not accept connections from Fly.io (tested from Virginia and São Paulo: the connection times out), but it does from Cloudflare's network. So the API asks it through a Cloudflare Worker (`relay/`) that only forwards to that service, only with a shared key, and says who is asking in its User-Agent. The API uses it once every half hour.
+
+Deploy the Worker (from `relay/`, logged in to Cloudflare):
+
+```bash
+npx wrangler deploy
+```
+
+Create the key and set it on both sides, without writing it to any file:
+
+```bash
+KEY=$(openssl rand -hex 32) && printf '%s' "$KEY" | npx wrangler secret put RELAY_KEY && fly secrets set SENAMHI_RELAY_KEY="$KEY" --app illapa-engine --stage; unset KEY
+```
+
+`SENAMHI_WFS_URL` (in `fly.toml`) points to the Worker. If SENAMHI ever allows direct connections, removing that line and the secret is enough.
+
+## 4. Deploy
 
 From the repository folder:
 
@@ -44,7 +62,7 @@ curl https://illapa-engine.fly.dev/healthz
 
 The machine stays on (`auto_stop_machines = "off"`): if it stopped when nobody visits, it would stop refreshing the data. The CDN takes the visits.
 
-## 4. The `api.illapalabs.org` domain
+## 5. The `api.illapalabs.org` domain
 
 ```bash
 fly certs add api.illapalabs.org --app illapa-engine

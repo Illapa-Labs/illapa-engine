@@ -14,6 +14,9 @@ primary_region = "gru"
   ILLAPA_ENV = "production"
   ILLAPA_ADDR = "0.0.0.0:8080"
   RUST_LOG = "info,tower_http=warn"
+  # El SENAMHI no acepta conexiones desde Fly: se le pregunta a través del puente de Cloudflare (relay/), que pide la
+  # clave SENAMHI_RELAY_KEY (un secreto, ver docs/DEPLOY.md).
+  SENAMHI_WFS_URL = "https://illapa-senamhi-relay.renzo-damian-go.workers.dev/wfs"
 
 [http_service]
   internal_port = 8080
