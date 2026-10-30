@@ -82,10 +82,16 @@ async fn main() -> Result<()> {
         .fetch_optional(&pool)
         .await
         .context("saved warning")?;
-    let saved_forecast: Option<sqlx::types::Json<Value>> = sqlx::query_scalar("select datos from pronostico where id = 1")
-        .fetch_optional(&pool)
-        .await
-        .context("saved forecast")?;
+    let saved_forecast: Option<(sqlx::types::Json<Value>, chrono::DateTime<chrono::Utc>)> =
+        sqlx::query_as("select datos, actualizado from pronostico where id = 1")
+            .fetch_optional(&pool)
+            .await
+            .context("saved forecast")?;
+    // How old the saved forecast is: a restart does not ask Open-Meteo again if it is still fresh
+    let forecast_age = saved_forecast
+        .as_ref()
+        .and_then(|(_, saved_at)| (chrono::Utc::now() - *saved_at).to_std().ok());
+    let saved_forecast = saved_forecast.map(|(json, _)| json);
 
     let state = AppState {
         pool,
@@ -124,6 +130,13 @@ async fn main() -> Result<()> {
         let every = config.forecast_every;
         let open_meteo_url = config.open_meteo_url.clone();
         tokio::spawn(async move {
+            // Open-Meteo limits calls per hour, and every run asks for about 1 450 points: restarting the API (a
+            // deploy, for example) must not ask again while the saved forecast is still fresh.
+            if let Some(age) = forecast_age.filter(|age| *age < every) {
+                let wait = every - age;
+                tracing::info!(minutes = wait.as_secs() / 60, "saved forecast is fresh, next one later");
+                tokio::time::sleep(wait).await;
+            }
             loop {
                 let result = async {
                     let forecast = forecast::fetch(&http, &open_meteo_url).await?;
@@ -132,11 +145,18 @@ async fn main() -> Result<()> {
                     anyhow::Ok(())
                 }
                 .await;
-                match result {
-                    Ok(()) => tracing::info!("forecast refreshed"),
-                    Err(error) => tracing::warn!("forecast refresh failed, the previous one stays: {error:#}"),
-                }
-                tokio::time::sleep(every).await;
+                let wait = match result {
+                    Ok(()) => {
+                        tracing::info!("forecast refreshed");
+                        every
+                    }
+                    Err(error) => {
+                        // A failure (Open-Meteo's hourly limit, for example) is retried in an hour, not in 6
+                        tracing::warn!("forecast refresh failed, the previous one stays: {error:#}");
+                        every.min(Duration::from_secs(3600))
+                    }
+                };
+                tokio::time::sleep(wait).await;
             }
         });
     } else {
