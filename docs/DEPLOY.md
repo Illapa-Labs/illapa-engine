@@ -58,7 +58,7 @@ fly status
 curl https://illapa-engine.fly.dev/healthz
 ```
 
-`/healthz` responde `ok` enseguida. `/v1/aviso` y las listas responden `503` hasta que termina el primer refresco (un par de minutos), y `/v1/pronostico` hasta el primer pronóstico (unos 3 minutos). Para ver qué hace: `fly logs`.
+`/healthz` responde `ok` enseguida. `/v1/aviso` y las listas responden `503` hasta que termina el primer refresco (un par de minutos), `/v1/pronostico` hasta el primer pronóstico (unos 3 minutos) y `/v1/nubes` hasta la primera imagen del satélite (menos de un minuto; las 12 horas completas tardan unos 10). `CLOUDS_ENABLED=false` apaga las nubes. Para ver qué hace: `fly logs`.
 
 La máquina queda siempre encendida (`auto_stop_machines = "off"`): si se apagara cuando nadie la visita, dejaría de refrescar los datos. Las visitas las absorbe el CDN.
 

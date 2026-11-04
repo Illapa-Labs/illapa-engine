@@ -24,6 +24,8 @@ La API de [Illapa Labs](https://github.com/Illapa-Labs). Pregunta al SENAMHI por
 | `GET /v1/provincias` | Las provincias, con los mismos datos |
 | `GET /v1/distritos` | Los distritos con su nivel de lluvia y de quebradas, y los centros poblados y personas en zona de aviso, por nivel |
 | `GET /v1/pronostico` | La lluvia pronosticada hora por hora (36 horas) en una malla de 0,2° (unos 22 km) sobre el Perú y, en el campo `zonas`, en mallas de 0,1° (la resolución real del modelo, unos 11 km) sobre las zonas con quebradas: Lima Este, costa norte, Áncash, Cusco y Arequipa. Es el modelo global de 10 km del UK Met Office vía Open-Meteo (CC BY-SA 4.0). `503` hasta el primer pronóstico |
+| `GET /v1/nubes` | Las nubes del satélite GOES-19 (NOAA, dominio público) de las últimas 12 horas: una imagen PNG cada 30 minutos y la más reciente (llega con unos 10 minutos de retraso), con la temperatura del tope de las nubes en colores. Cada imagen cubre `oeste`, `sur`, `este`, `norte`, con las filas en Mercator. `503` hasta la primera imagen |
+| `GET /v1/nubes/{archivo}.png` | Una de esas imágenes; no cambia, así que se guarda un día |
 | `GET /healthz` | `ok` si la API responde |
 
 `/v1/provincias` y `/v1/distritos` aceptan estos filtros:

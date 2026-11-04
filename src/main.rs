@@ -16,6 +16,7 @@ use tokio::sync::RwLock;
 use tower::{ServiceBuilder, limit::ConcurrencyLimitLayer, load_shed::LoadShedLayer, timeout::TimeoutLayer};
 use tower_http::{compression::CompressionLayer, cors::CorsLayer, set_header::SetResponseHeaderLayer, trace::TraceLayer};
 
+mod clouds;
 mod config;
 mod forecast;
 mod geometry;
@@ -41,6 +42,8 @@ pub struct AppState {
     pronostico: Arc<RwLock<Option<Value>>>,
     /// The department, province and district lists, rebuilt after every refresh
     snapshot: Arc<RwLock<Arc<snapshot::Snapshot>>>,
+    /// The GOES-19 cloud images of the last 12 hours (see clouds.rs)
+    nubes: clouds::Frames,
 }
 
 impl AppState {
@@ -101,9 +104,16 @@ async fn main() -> Result<()> {
         aviso: Arc::new(RwLock::new(saved.map(|json| json.0))),
         pronostico: Arc::new(RwLock::new(saved_forecast.map(|json| json.0))),
         snapshot: Arc::new(RwLock::new(Arc::new(snapshot::Snapshot::default()))),
+        nubes: clouds::Frames::default(),
     };
     state.reload_snapshot().await;
 
+    // The GOES-19 clouds have their own loop: their bucket is not SENAMHI nor Open-Meteo
+    if config.clouds_enabled {
+        tokio::spawn(clouds::run(http.clone(), state.nubes.clone()));
+    } else {
+        tracing::info!("GOES-19 clouds are off (CLOUDS_ENABLED=false, or REFRESH_ENABLED=false without it)");
+    }
     if config.refresh_enabled {
         let background = state.clone();
         let every = config.refresh_every;
@@ -173,6 +183,8 @@ async fn main() -> Result<()> {
         .route("/v1/aviso", get(routes::aviso))
         .route("/v1/departamentos", get(routes::departamentos))
         .route("/v1/pronostico", get(routes::pronostico))
+        .route("/v1/nubes", get(routes::nubes))
+        .route("/v1/nubes/{archivo}", get(routes::nube))
         .route_layer(middleware::from_fn(protection::reject_query));
     let mut data = filtered.merge(fixed);
     match &config.origin_secret {
