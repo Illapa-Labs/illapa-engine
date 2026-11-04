@@ -25,6 +25,9 @@ pub struct Config {
     pub open_meteo_url: String,
     /// How often the forecast is asked again
     pub forecast_every: Duration,
+    /// Whether the GOES-19 cloud images are kept up to date (see clouds.rs). By default they follow
+    /// `REFRESH_ENABLED`; `CLOUDS_ENABLED=true` or `false` overrides it
+    pub clouds_enabled: bool,
 }
 
 impl Config {
@@ -43,6 +46,11 @@ impl Config {
             origin_enforce: var("ORIGIN_CHECK").is_none_or(|value| value != "report"),
             open_meteo_url: var("OPEN_METEO_URL").unwrap_or_else(|| OPEN_METEO.into()),
             forecast_every: Duration::from_secs(var("FORECAST_REFRESH_SECS").and_then(|value| value.parse().ok()).unwrap_or(43_200)),
+            clouds_enabled: match var("CLOUDS_ENABLED").as_deref() {
+                Some("true") => true,
+                Some("false") => false,
+                _ => var("REFRESH_ENABLED").is_none_or(|value| value != "false"),
+            },
         }
     }
 }

@@ -25,6 +25,8 @@ pub enum Freshness {
     Warnings,
     /// The forecast, refreshed every 12 hours: half an hour everywhere.
     Forecast,
+    /// The list of cloud images, with a new one every 10 minutes: 5 minutes everywhere.
+    Clouds,
 }
 
 /// If the API fails, a CDN may keep serving the last copy for a day: an old warning is better than an empty page.
@@ -35,6 +37,7 @@ impl Freshness {
         match self {
             Self::Warnings => format!("public, max-age=300, stale-while-revalidate=1500, {STALE_IF_ERROR}"),
             Self::Forecast => format!("public, max-age=1800, stale-while-revalidate=3600, {STALE_IF_ERROR}"),
+            Self::Clouds => format!("public, max-age=300, stale-while-revalidate=600, {STALE_IF_ERROR}"),
         }
     }
 
@@ -42,6 +45,7 @@ impl Freshness {
         match self {
             Self::Warnings => format!("max-age=600, stale-while-revalidate=1200, {STALE_IF_ERROR}"),
             Self::Forecast => format!("max-age=1800, stale-while-revalidate=3600, {STALE_IF_ERROR}"),
+            Self::Clouds => format!("max-age=300, stale-while-revalidate=600, {STALE_IF_ERROR}"),
         }
     }
 }
@@ -84,6 +88,54 @@ pub async fn pronostico(State(state): State<AppState>) -> Response {
         Some(forecast) => cached(forecast.clone(), Freshness::Forecast),
         None => unavailable("todavía no hay un pronóstico cargado; vuelve a intentar en unos minutos"),
     }
+}
+
+/// The GOES-19 cloud images of the last 12 hours (one every 30 minutes, plus the newest), oldest first. Each image
+/// covers `oeste`, `sur`, `este`, `norte` with its rows in Mercator, like the forecast images of the website.
+pub async fn nubes(State(state): State<AppState>) -> Response {
+    let frames = state.nubes.read().await;
+    if frames.is_empty() {
+        return unavailable("todavía no hay imágenes del satélite; vuelve a intentar en unos minutos");
+    }
+    let [oeste, sur, este, norte] = crate::clouds::BOUNDS;
+    let imagenes: Vec<Value> = frames
+        .keys()
+        .map(|time| json!({ "hora": time.to_rfc3339_opts(chrono::SecondsFormat::Secs, true), "url": format!("/v1/nubes/{}.png", time.format("%Y%m%dT%H%M%S")) }))
+        .collect();
+    cached(
+        json!({
+            "fuente": "Nubes: satélite GOES-19 (NOAA), banda 13, infrarrojo de 10,3 µm",
+            "licencia": "Dominio público",
+            "oeste": oeste, "sur": sur, "este": este, "norte": norte,
+            "imagenes": imagenes,
+        }),
+        Freshness::Clouds,
+    )
+}
+
+/// One cloud image. It never changes, so it can be kept for a day (it is dropped from the list after 12 hours).
+pub async fn nube(State(state): State<AppState>, axum::extract::Path(archivo): axum::extract::Path<String>) -> Response {
+    let time = archivo
+        .strip_suffix(".png")
+        .and_then(|stamp| chrono::NaiveDateTime::parse_from_str(stamp, "%Y%m%dT%H%M%S").ok())
+        .map(|time| time.and_utc());
+    let png = match time {
+        Some(time) => state.nubes.read().await.get(&time).cloned(),
+        None => None,
+    };
+    let Some(png) = png else {
+        let mut response = (StatusCode::NOT_FOUND, Json(json!({ "error": "no hay una imagen con ese nombre" }))).into_response();
+        response
+            .headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        return response;
+    };
+    let mut response = (StatusCode::OK, png.as_ref().clone()).into_response();
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/png"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=86400, immutable"));
+    headers.insert(CDN_CACHE_CONTROL, HeaderValue::from_static("max-age=86400, immutable"));
+    response
 }
 
 /// A list with its source and how fresh the data is. Before the first refresh there are no warnings yet, which is

@@ -24,6 +24,8 @@ The API of [Illapa Labs](https://github.com/Illapa-Labs). It asks SENAMHI (Peru'
 | `GET /v1/provincias` | The provinces, with the same data |
 | `GET /v1/distritos` | The districts with their rain and ravine levels, and the populated centers and people in warning areas, by level |
 | `GET /v1/pronostico` | The hourly rain forecast (36 hours) on a 0.2° grid (about 22 km) over Peru and, in the `zonas` field, on 0.1° grids (the model's real resolution, about 11 km) over the areas with ravines: Lima Este, the north coast, Áncash, Cusco and Arequipa. It is the UK Met Office global 10 km model via Open-Meteo (CC BY-SA 4.0). `503` until the first forecast |
+| `GET /v1/nubes` | Clouds from the GOES-19 satellite (NOAA, public domain) over the last 12 hours: one PNG every 30 minutes plus the newest (about 10 minutes behind), colouring the temperature of the cloud tops. Each image covers `oeste`, `sur`, `este`, `norte`, with rows in Mercator. `503` until the first image |
+| `GET /v1/nubes/{archivo}.png` | One of those images; it never changes, so it is kept for a day |
 | `GET /healthz` | `ok` if the API is up |
 
 `/v1/provincias` and `/v1/distritos` accept these filters:
