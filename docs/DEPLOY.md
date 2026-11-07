@@ -32,7 +32,7 @@ Las tablas y la población del INEI se crean solas al arrancar (migraciones).
 
 ## 3. El puente hacia el SENAMHI
 
-El servidor WFS del SENAMHI no acepta conexiones desde Fly.io (probado desde Virginia y São Paulo: la conexión se agota), pero sí desde la red de Cloudflare. Por eso la API le pregunta a través de un Worker de Cloudflare (`relay/`) que solo reenvía a ese servicio, solo con una clave compartida y diciendo quién consulta en el User-Agent. La API lo usa una vez cada media hora.
+El servidor WFS del SENAMHI no acepta conexiones desde Fly.io (probado desde Virginia y São Paulo: la conexión se agota), pero sí desde la red de Cloudflare. Por eso la API le pregunta a través de un Worker de Cloudflare (`relay/`) que solo reenvía a ese servicio, solo con una clave compartida y diciendo quién consulta en el User-Agent. La API lo usa una vez cada media hora para los avisos de lluvia y quebradas, y una vez por hora para ver si hay avisos de inundación de ríos nuevos (cuando los hay, baja unos 100 MB por el puente, una vez al día). Las capas de inundación (`dhi-seh-sonics:SONICS…`) salen del mismo servicio WFS, así que el Worker no cambia.
 
 Desplegar el Worker (desde `relay/`, con sesión de Cloudflare):
 
@@ -58,7 +58,7 @@ fly status
 curl https://illapa-engine.fly.dev/healthz
 ```
 
-`/healthz` responde `ok` enseguida. `/v1/aviso` y las listas responden `503` hasta que termina el primer refresco (un par de minutos), `/v1/pronostico` hasta el primer pronóstico (unos 3 minutos) y `/v1/nubes` hasta la primera imagen del satélite (menos de un minuto; las 12 horas completas tardan unos 10). `CLOUDS_ENABLED=false` apaga las nubes. Para ver qué hace: `fly logs`.
+`/healthz` responde `ok` enseguida. `/v1/aviso` y las listas responden `503` hasta que termina el primer refresco (un par de minutos), `/v1/pronostico` hasta el primer pronóstico (unos 3 minutos) y `/v1/nubes` hasta la primera imagen del satélite (menos de un minuto; las 12 horas completas tardan unos 10). `/v1/inundaciones` responde `503` hasta la primera corrida de avisos de inundación (un par de minutos), salvo que ya haya una guardada. `CLOUDS_ENABLED=false` apaga las nubes y `FLOODS_ENABLED=false` los avisos de inundación. Para ver qué hace: `fly logs`.
 
 La máquina queda siempre encendida (`auto_stop_machines = "off"`): si se apagara cuando nadie la visita, dejaría de refrescar los datos. Las visitas las absorbe el CDN.
 

@@ -18,6 +18,7 @@ use tower_http::{compression::CompressionLayer, cors::CorsLayer, set_header::Set
 
 mod clouds;
 mod config;
+mod floods;
 mod forecast;
 mod geometry;
 mod protection;
@@ -44,6 +45,8 @@ pub struct AppState {
     snapshot: Arc<RwLock<Arc<snapshot::Snapshot>>>,
     /// The GOES-19 cloud images of the last 12 hours (see clouds.rs)
     nubes: clouds::Frames,
+    /// The last river flood warnings (SONICS-PBI, see floods.rs); `None` until the first one, or a saved one
+    inundaciones: floods::Slot,
 }
 
 impl AppState {
@@ -97,6 +100,7 @@ async fn main() -> Result<()> {
         .filter(|(json, _)| forecast::on_current_grid(&json.0))
         .and_then(|(_, saved_at)| (chrono::Utc::now() - *saved_at).to_std().ok());
     let saved_forecast = saved_forecast.map(|(json, _)| json);
+    let saved_floods = floods::load(&pool).await?;
 
     let state = AppState {
         pool,
@@ -105,6 +109,7 @@ async fn main() -> Result<()> {
         pronostico: Arc::new(RwLock::new(saved_forecast.map(|json| json.0))),
         snapshot: Arc::new(RwLock::new(Arc::new(snapshot::Snapshot::default()))),
         nubes: clouds::Frames::default(),
+        inundaciones: Arc::new(RwLock::new(saved_floods.map(Arc::new))),
     };
     state.reload_snapshot().await;
 
@@ -113,6 +118,17 @@ async fn main() -> Result<()> {
         tokio::spawn(clouds::run(http.clone(), state.nubes.clone()));
     } else {
         tracing::info!("GOES-19 clouds are off (CLOUDS_ENABLED=false, or REFRESH_ENABLED=false without it)");
+    }
+    // The river flood warnings too: SENAMHI publishes them once a day, and they are checked every hour
+    if config.floods_enabled {
+        tokio::spawn(floods::run(
+            state.pool.clone(),
+            state.senamhi.clone(),
+            state.inundaciones.clone(),
+            config.floods_every,
+        ));
+    } else {
+        tracing::info!("river flood warnings are off (FLOODS_ENABLED=false, or REFRESH_ENABLED=false without it)");
     }
     if config.refresh_enabled {
         let background = state.clone();
@@ -185,6 +201,8 @@ async fn main() -> Result<()> {
         .route("/v1/pronostico", get(routes::pronostico))
         .route("/v1/nubes", get(routes::nubes))
         .route("/v1/nubes/{archivo}", get(routes::nube))
+        .route("/v1/inundaciones", get(routes::inundaciones))
+        .route("/v1/inundaciones/{dia}", get(routes::inundacion))
         .route_layer(middleware::from_fn(protection::reject_query));
     let mut data = filtered.merge(fixed);
     match &config.origin_secret {
