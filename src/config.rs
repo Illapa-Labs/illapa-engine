@@ -28,6 +28,11 @@ pub struct Config {
     /// Whether the GOES-19 cloud images are kept up to date (see clouds.rs). By default they follow
     /// `REFRESH_ENABLED`; `CLOUDS_ENABLED=true` or `false` overrides it
     pub clouds_enabled: bool,
+    /// Whether SENAMHI's river flood warnings (SONICS-PBI, see floods.rs) are kept up to date. Like the clouds, they
+    /// follow `REFRESH_ENABLED` unless `FLOODS_ENABLED=true` or `false` says otherwise
+    pub floods_enabled: bool,
+    /// How often SENAMHI is asked whether there is a new flood warning run (a few hundred bytes each time)
+    pub floods_every: Duration,
 }
 
 impl Config {
@@ -51,6 +56,12 @@ impl Config {
                 Some("false") => false,
                 _ => var("REFRESH_ENABLED").is_none_or(|value| value != "false"),
             },
+            floods_enabled: match var("FLOODS_ENABLED").as_deref() {
+                Some("true") => true,
+                Some("false") => false,
+                _ => var("REFRESH_ENABLED").is_none_or(|value| value != "false"),
+            },
+            floods_every: Duration::from_secs(var("FLOODS_CHECK_SECS").and_then(|value| value.parse().ok()).unwrap_or(3600)),
         }
     }
 }

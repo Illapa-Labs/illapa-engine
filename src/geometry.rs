@@ -81,12 +81,17 @@ pub fn douglas_peucker(points: &[Point], tolerance: f64) -> Ring {
 /// The warning area for the map: less detail, 4 decimals, and only rings that are still polygons.
 /// Polygons whose outer ring collapses are dropped, and so are collapsed holes.
 pub fn lighten(geometry: &Value) -> Value {
-    let round = |value: f64| (value * DISPLAY_SCALE).round() / DISPLAY_SCALE;
-    let polygons: Vec<Value> = polygons_of(geometry)
+    lighten_polygons(&polygons_of(geometry), DISPLAY_TOLERANCE, DISPLAY_SCALE)
+}
+
+/// Like `lighten`, with its own tolerance (degrees) and rounding (`1e3` keeps 3 decimals).
+pub fn lighten_polygons(polygons: &[Polygon], tolerance: f64, scale: f64) -> Value {
+    let round = |value: f64| (value * scale).round() / scale;
+    let polygons: Vec<Value> = polygons
         .iter()
         .filter_map(|polygon| {
             let mut rings = polygon.iter().map(|ring| {
-                douglas_peucker(ring, DISPLAY_TOLERANCE)
+                douglas_peucker(ring, tolerance)
                     .into_iter()
                     .map(|[x, y]| [round(x), round(y)])
                     .collect::<Ring>()

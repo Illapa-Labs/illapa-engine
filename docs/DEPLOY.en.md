@@ -32,7 +32,7 @@ The tables and INEI population are created on start (migrations).
 
 ## 3. The relay to SENAMHI
 
-SENAMHI's WFS server does not accept connections from Fly.io (tested from Virginia and São Paulo: the connection times out), but it does from Cloudflare's network. So the API asks it through a Cloudflare Worker (`relay/`) that only forwards to that service, only with a shared key, and says who is asking in its User-Agent. The API uses it once every half hour.
+SENAMHI's WFS server does not accept connections from Fly.io (tested from Virginia and São Paulo: the connection times out), but it does from Cloudflare's network. So the API asks it through a Cloudflare Worker (`relay/`) that only forwards to that service, only with a shared key, and says who is asking in its User-Agent. The API uses it once every half hour for the rain and ravine warnings, and once an hour to check for new river flood warnings (when there are, it downloads about 100 MB through the relay, once a day). The flood layers (`dhi-seh-sonics:SONICS…`) come from the same WFS service, so the Worker does not change.
 
 Deploy the Worker (from `relay/`, logged in to Cloudflare):
 
@@ -58,7 +58,7 @@ fly status
 curl https://illapa-engine.fly.dev/healthz
 ```
 
-`/healthz` answers `ok` right away. `/v1/aviso` and the lists answer `503` until the first refresh finishes (a couple of minutes), `/v1/pronostico` until the first forecast (about 3 minutes), and `/v1/nubes` until the first satellite image (under a minute; the full 12 hours take about 10). `CLOUDS_ENABLED=false` turns the clouds off. To see what it is doing: `fly logs`.
+`/healthz` answers `ok` right away. `/v1/aviso` and the lists answer `503` until the first refresh finishes (a couple of minutes), `/v1/pronostico` until the first forecast (about 3 minutes), and `/v1/nubes` until the first satellite image (under a minute; the full 12 hours take about 10). `/v1/inundaciones` answers `503` until the first river flood run (a couple of minutes), unless one is already saved. `CLOUDS_ENABLED=false` turns the clouds off and `FLOODS_ENABLED=false` the river flood warnings. To see what it is doing: `fly logs`.
 
 The machine stays on (`auto_stop_machines = "off"`): if it stopped when nobody visits, it would stop refreshing the data. The CDN takes the visits.
 

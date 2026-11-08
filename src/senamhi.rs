@@ -2,6 +2,7 @@
 //! Client for SENAMHI's public WFS server (IDESEP). No account is needed.
 
 use anyhow::{Context, Result, bail};
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::time::{Duration, Instant};
 
@@ -47,6 +48,11 @@ impl Senamhi {
 
     /// A whole layer as GeoJSON. `extra` is appended to the query string (for example `&propertyName=...`).
     pub async fn layer(&self, type_name: &str, extra: &str) -> Result<Value> {
+        self.layer_as(type_name, extra).await
+    }
+
+    /// A whole layer read straight into `T`: for big layers, a typed shape takes far less memory than a `Value`.
+    pub async fn layer_as<T: DeserializeOwned>(&self, type_name: &str, extra: &str) -> Result<T> {
         let url = format!(
             "{}?service=WFS&version=1.0.0&request=GetFeature&typeName={type_name}&maxFeatures=20000&outputFormat=application/json&srsName=EPSG:4326{extra}",
             self.wfs_url
@@ -54,7 +60,7 @@ impl Senamhi {
         let mut attempt = 1;
         loop {
             let started = Instant::now();
-            let result: Result<Value> = async {
+            let result: Result<T> = async {
                 let response = self
                     .with_key(self.http.get(&url))
                     .timeout(LAYER_TIMEOUT)

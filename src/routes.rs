@@ -27,6 +27,9 @@ pub enum Freshness {
     Forecast,
     /// The list of cloud images, with a new one every 10 minutes: 5 minutes everywhere.
     Clouds,
+    /// The river flood warnings, published once a day and checked every hour: half an hour everywhere, and an hour
+    /// more serving the previous copy.
+    Floods,
 }
 
 /// If the API fails, a CDN may keep serving the last copy for a day: an old warning is better than an empty page.
@@ -38,6 +41,7 @@ impl Freshness {
             Self::Warnings => format!("public, max-age=300, stale-while-revalidate=1500, {STALE_IF_ERROR}"),
             Self::Forecast => format!("public, max-age=1800, stale-while-revalidate=3600, {STALE_IF_ERROR}"),
             Self::Clouds => format!("public, max-age=300, stale-while-revalidate=600, {STALE_IF_ERROR}"),
+            Self::Floods => format!("public, max-age=1800, stale-while-revalidate=3600, {STALE_IF_ERROR}"),
         }
     }
 
@@ -46,6 +50,7 @@ impl Freshness {
             Self::Warnings => format!("max-age=600, stale-while-revalidate=1200, {STALE_IF_ERROR}"),
             Self::Forecast => format!("max-age=1800, stale-while-revalidate=3600, {STALE_IF_ERROR}"),
             Self::Clouds => format!("max-age=300, stale-while-revalidate=600, {STALE_IF_ERROR}"),
+            Self::Floods => format!("max-age=1800, stale-while-revalidate=3600, {STALE_IF_ERROR}"),
         }
     }
 }
@@ -64,6 +69,15 @@ fn cached(body: Value, freshness: Freshness) -> Response {
 /// Not ready yet: never cached, so the next request tries again.
 fn unavailable(message: &str) -> Response {
     let mut response = (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": message }))).into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+/// Not there: never cached.
+fn not_found(message: &str) -> Response {
+    let mut response = (StatusCode::NOT_FOUND, Json(json!({ "error": message }))).into_response();
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -124,11 +138,7 @@ pub async fn nube(State(state): State<AppState>, axum::extract::Path(archivo): a
         None => None,
     };
     let Some(png) = png else {
-        let mut response = (StatusCode::NOT_FOUND, Json(json!({ "error": "no hay una imagen con ese nombre" }))).into_response();
-        response
-            .headers_mut()
-            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-        return response;
+        return not_found("no hay una imagen con ese nombre");
     };
     let mut response = (StatusCode::OK, png.as_ref().clone()).into_response();
     let headers = response.headers_mut();
@@ -171,4 +181,24 @@ pub async fn distritos(State(state): State<AppState>, Query(filters): Query<Filt
     let snapshot = state.snapshot.read().await.clone();
     let items = snapshot.districts(&filters);
     list("distritos", json!(items), items.len(), &snapshot)
+}
+
+/// SENAMHI's river flood warnings (SONICS-PBI): what each level means, each day's date and totals, and what each
+/// district has in the warning areas (see `floods.rs` for the format).
+pub async fn inundaciones(State(state): State<AppState>) -> Response {
+    match state.inundaciones.read().await.as_ref() {
+        Some(floods) => cached(floods.resumen.clone(), Freshness::Floods),
+        None => unavailable("todavía no hay avisos de inundación cargados; vuelve a intentar en unos minutos"),
+    }
+}
+
+/// The warning areas of one day as GeoJSON, ready for the map: 0 is the current state, 1 to 7 the forecast.
+pub async fn inundacion(State(state): State<AppState>, axum::extract::Path(dia): axum::extract::Path<String>) -> Response {
+    let Some(day) = dia.parse::<usize>().ok().filter(|day| *day < crate::floods::DAYS) else {
+        return not_found("el día va de 0 (estado actual) a 7");
+    };
+    match state.inundaciones.read().await.as_ref() {
+        Some(floods) => cached(floods.dias[day].clone(), Freshness::Floods),
+        None => unavailable("todavía no hay avisos de inundación cargados; vuelve a intentar en unos minutos"),
+    }
 }

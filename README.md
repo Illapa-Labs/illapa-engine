@@ -26,6 +26,8 @@ La API de [Illapa Labs](https://github.com/Illapa-Labs). Pregunta al SENAMHI por
 | `GET /v1/pronostico` | La lluvia pronosticada hora por hora (36 horas) en una malla de 0,2° (unos 22 km) sobre el Perú y, en el campo `zonas`, en mallas de 0,1° (la resolución real del modelo, unos 11 km) sobre las zonas con quebradas: Lima Este, costa norte, Áncash, Cusco y Arequipa. Es el modelo global de 10 km del UK Met Office vía Open-Meteo (CC BY-SA 4.0). `503` hasta el primer pronóstico |
 | `GET /v1/nubes` | Las nubes del satélite GOES-19 (NOAA, dominio público) de las últimas 12 horas: una imagen PNG cada 30 minutos y la más reciente (llega con unos 10 minutos de retraso), con la temperatura del tope de las nubes en colores. Cada imagen cubre `oeste`, `sur`, `este`, `norte`, con las filas en Mercator. `503` hasta la primera imagen |
 | `GET /v1/nubes/{archivo}.png` | Una de esas imágenes; no cambia, así que se guarda un día |
+| `GET /v1/inundaciones` | Los avisos de inundación de ríos del SENAMHI (SONICS-PBI) para el estado actual y los 7 días siguientes: qué significa cada nivel, la fecha y los totales de cada día, y lo expuesto por distrito (ver [Avisos de inundación de ríos](#avisos-de-inundación-de-ríos)). `503` hasta la primera corrida |
+| `GET /v1/inundaciones/{dia}` | Las subcuencas con aviso de un día en GeoJSON, aligeradas para el mapa (unos 340 KB, 95 KB comprimidas): `0` es el estado actual y `1` a `7` el pronóstico |
 | `GET /healthz` | `ok` si la API responde |
 
 `/v1/provincias` y `/v1/distritos` aceptan estos filtros:
@@ -52,7 +54,30 @@ Cada 30 minutos, en segundo plano:
 
 Cada 12 horas pide a Open-Meteo el pronóstico de lluvia del UK Met Office para unos 3 070 puntos sobre el Perú (malla de 0,2°) y unos 800 más en las zonas de 0,1° (`data/zonas-pronostico.json`, que se regenera con `scripts/generar-zonas-pronostico.py`), en tandas con pausas para respetar sus límites (tarda unos 10 minutos). Se cuenta cada punto como una consulta, porque no está claro si Open-Meteo lo hace así: dos corridas al día son unas 7 700 de las 10 000 diarias del plan gratuito, y una prueba comprueba que no se pase. Para agregar una zona hay que sacar puntos de otra o pedir menos corridas.
 
-Al arrancar sirve el último aviso y el último pronóstico guardados, así que no hay que esperar al primer refresco.
+Cada hora le pregunta al SENAMHI solo por los niveles y las fechas de los avisos de inundación de ríos (unos cientos de bytes); cuando publica una corrida nueva, baja los 8 días y lo expuesto (unos 100 MB en total, minuto y medio) y lo guarda.
+
+Al arrancar sirve el último aviso, el último pronóstico y los últimos avisos de inundación guardados, así que no hay que esperar al primer refresco.
+
+## Avisos de inundación de ríos
+
+El servicio SONICS-PBI del SENAMHI («pronósticos basados en impacto frente a inundaciones fluviales») marca las subcuencas donde un río puede desbordarse o subir mucho. Se emite una vez al día (hacia la 1 de la tarde): el **estado actual** (día `0`) son las condiciones observadas hasta el día anterior a la emisión, y los **días 1 a 7** el pronóstico desde el día de la emisión. Cada día trae su `fecha`; `observado_hasta` es la del estado actual.
+
+Los niveles, como los describe el SENAMHI en su [Observatorio](https://observatorio.senamhi.gob.pe/investigadores/agua/sonics):
+
+| Nivel | Color | Peligro |
+|---|---|---|
+| 1 | Amarillo | Probables condiciones que podrían afectar las actividades en el río y zonas aledañas |
+| 2 | Naranja | Condiciones de riesgo para actividades en el río y zonas aledañas, con probable erosión de márgenes y afectación de infraestructura cerca del río |
+| 3 | Rojo | Previsión de desborde del río y erosión de márgenes; posible inundación en zonas pobladas y agrícolas más bajas |
+
+Para los tres recomienda tomar precauciones y evitar actividades cerca del río. El área coloreada es la subcuenca donde puede haber impacto: el área que de verdad se inunda puede variar dentro de ella.
+
+En `/v1/inundaciones`, los conteos por nivel van en listas de tres: `[nivel 1, nivel 2, nivel 3]`.
+
+- `dias`: por día, `fecha`, `subcuencas`, `centros_poblados`, `instituciones_educativas`, `establecimientos_salud` y `vias_km` (`nacional`, `departamental`, `vecinal`) de todo el país, y `mapa`, la ruta de su GeoJSON.
+- `distritos`: por ubigeo, los días en que el distrito tiene algo expuesto, con su `nivel` más alto y los centros poblados, instituciones educativas y establecimientos de salud por nivel. Un distrito aparece solo si tiene algo de eso en una subcuenca con aviso.
+- `provincias` y `departamentos`: los kilómetros de vías por nivel. El SENAMHI no da el distrito de las vías: las departamentales y vecinales traen su provincia y las nacionales su departamento.
+- `niveles`: nombre, color, peligro y recomendación de cada nivel.
 
 ## Caché y CDN
 
@@ -62,6 +87,7 @@ Los datos no cambian con cada visita: el aviso cada media hora y el pronóstico 
 |---|---|---|
 | Aviso, departamentos, provincias, distritos | 5 min, y 25 min más sirviendo la copia anterior mientras pide la nueva | 10 min, y 20 min más sirviendo la anterior |
 | Pronóstico | 30 min, y 1 h más sirviendo la anterior | igual |
+| Avisos de inundación de ríos | 30 min, y 1 h más sirviendo la anterior | igual |
 | Errores (`503`) y `/healthz` | no se guardan (`no-store`) | no se guardan |
 
 Todas las respuestas con datos permiten además seguir sirviendo la última copia hasta un día si la API falla (`stale-if-error`): un aviso de hace un rato es mejor que una pantalla vacía. No se usa `s-maxage`, porque impide que el CDN sirva la copia anterior mientras pide la nueva.
@@ -109,7 +135,7 @@ La configuración va en variables de entorno (ver [.env.example](.env.example));
 
 ## Datos y atribución
 
-Esta API usa datos del SENAMHI (avisos y límites de distritos), del INEI (población, Censo 2017) y del [UK Met Office](https://www.metoffice.gov.uk) vía [Open-Meteo](https://open-meteo.com) (pronóstico; los datos del Met Office son CC BY-SA 4.0: hay que citarlos y compartir lo derivado con la misma licencia; la API gratuita de Open-Meteo es solo para uso no comercial). La licencia AGPL cubre el código, no los datos. El estado de la licencia de cada fuente está en [DATOS.md de la web](https://github.com/Illapa-Labs/peru-alerta-lluvia/blob/main/DATOS.md): las condiciones de reutilización del SENAMHI y del INEI **todavía están por confirmar**.
+Esta API usa datos del SENAMHI (avisos de lluvia, quebradas e inundación de ríos, lo expuesto y límites de distritos), del INEI (población, Censo 2017) y del [UK Met Office](https://www.metoffice.gov.uk) vía [Open-Meteo](https://open-meteo.com) (pronóstico; los datos del Met Office son CC BY-SA 4.0: hay que citarlos y compartir lo derivado con la misma licencia; la API gratuita de Open-Meteo es solo para uso no comercial). La licencia AGPL cubre el código, no los datos. El estado de la licencia de cada fuente está en [DATOS.md de la web](https://github.com/Illapa-Labs/peru-alerta-lluvia/blob/main/DATOS.md): las condiciones de reutilización del SENAMHI y del INEI **todavía están por confirmar**.
 
 ## Licencia
 
